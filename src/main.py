@@ -17,7 +17,7 @@ import logging
 import os
 import sys
 from os.path import join, dirname
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 from uuid import uuid4
 
 from dotenv import load_dotenv
@@ -25,6 +25,7 @@ from telegram import (Message, InlineKeyboardMarkup, InlineKeyboardButton,
                       InlineQueryResultArticle, InputTextMessageContent)
 from telegram.bot import Bot
 from telegram.callbackquery import CallbackQuery
+from telegram.error import TelegramError
 from telegram.ext import (Updater, CommandHandler, MessageHandler, Filters, ConversationHandler,
                           InlineQueryHandler)
 from telegram.ext.callbackqueryhandler import CallbackQueryHandler
@@ -83,7 +84,7 @@ def inline_keyboard_markup_answers(poll: Poll) -> InlineKeyboardMarkup:
 def inline_keyboard_markup_admin(poll: Poll) -> InlineKeyboardMarkup:
     keyboard = [
         [InlineKeyboardButton("publish", switch_inline_query=str(poll.id))],
-        [InlineKeyboardButton("update", callback_data=".update")],
+        [InlineKeyboardButton("update", callback_data=".update {}".format(poll.id))],
     ]
 
     return InlineKeyboardMarkup(keyboard)
@@ -224,6 +225,25 @@ def about(bot: Bot, update: Update):
         "then publish it to groups or send it to individual friends.")
 
 
+def callback_query_update(bot: Bot, update: Update, groups: Tuple[str]):
+    query: CallbackQuery = update.callback_query
+
+    poll_id = int(groups[0])
+    poll = Poll.load(poll_id)
+
+    try:
+        query.edit_message_text(
+            text=str(poll),
+            parse_mode=None,
+            disable_web_page_preview=True,
+            reply_markup=inline_keyboard_markup_admin(poll))
+    except TelegramError as e:
+        # TODO: add `change_count` field to poll in db
+        if e.message != "'Bad Request: message is not modified'":
+            raise
+    query.answer(text='\u2705 results updated.')
+
+
 def main():
     dotenv_path = join(dirname(dirname(__file__)), '.env')
     load_dotenv(dotenv_path)
@@ -256,6 +276,11 @@ def main():
 
     dp.add_handler(InlineQueryHandler(inline))
 
+    dp.add_handler(
+        CallbackQueryHandler(
+            callback_query_update,
+            pattern=r"\.update (\d+)",
+            pass_groups=True))
     dp.add_handler(CallbackQueryHandler(callback_query))
 
     # log all errors
