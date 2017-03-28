@@ -81,12 +81,12 @@ def inline_keyboard_markup_answers(poll: Poll) -> InlineKeyboardMarkup:
 
 
 def inline_keyboard_markup_admin(poll: Poll) -> InlineKeyboardMarkup:
-    keyboard = [[
-        InlineKeyboardButton("publish", switch_inline_query=str(poll.id)),
-        InlineKeyboardButton("update", callback_data=".update")
-    ]]
+    keyboard = [
+        [InlineKeyboardButton("publish", switch_inline_query=str(poll.id))],
+        [InlineKeyboardButton("update", callback_data=".update")],
+    ]
 
-    return InlineKeyboardMarkup([])
+    return InlineKeyboardMarkup(keyboard)
 
 
 def start(bot: Bot, update: Update) -> int:
@@ -116,6 +116,14 @@ def add_answer(bot: Bot, update: Update) -> int:
     return ANSWERS
 
 
+def send_admin_poll(message: Message, poll: Poll):
+    markup = inline_keyboard_markup_admin(poll)
+
+    message.reply_text(
+        str(poll),
+        reply_markup=markup)
+
+
 def create_poll(bot: Bot, update: Update) -> int:
     message: Message = update.message
     poll = UNFINISHED.pop(message.from_user.id)
@@ -125,11 +133,7 @@ def create_poll(bot: Bot, update: Update) -> int:
         "poll created.  "
         "now you can publish it to a group or send it to your friend in a private message.")
 
-    markup = inline_keyboard_markup_admin(poll)
-
-    message.reply_text(
-        str(poll),
-        reply_markup=markup)
+    send_admin_poll(message, poll)
 
     return ConversationHandler.END
 
