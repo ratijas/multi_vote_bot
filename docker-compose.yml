@@ -12,3 +12,6 @@ services:
 
     volumes:
       - "multi_vote_bot:/root/.local/share/multi_vote_bot"
+
+    env_file:
+      - ".env"
