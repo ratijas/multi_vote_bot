@@ -67,7 +67,6 @@ class Answer(object):
             for v in self.voters():
                 cur.execute("""INSERT INTO votes (user_id, poll_id, answer_id) VALUES (?, ?, ?)""",
                             (v.id, self._poll.id, self.id))
-
             conn.commit()
 
         assert self.id is not None

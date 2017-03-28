@@ -17,7 +17,7 @@ import logging
 import os
 import sys
 from os.path import join, dirname
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 from uuid import uuid4
 
 from dotenv import load_dotenv
@@ -25,6 +25,7 @@ from telegram import (Message, InlineKeyboardMarkup, InlineKeyboardButton,
                       InlineQueryResultArticle, InputTextMessageContent)
 from telegram.bot import Bot
 from telegram.callbackquery import CallbackQuery
+from telegram.chat import Chat
 from telegram.error import TelegramError
 from telegram.ext import (Updater, CommandHandler, MessageHandler, Filters, ConversationHandler,
                           InlineQueryHandler)
@@ -53,26 +54,6 @@ class PollCallbackData(object):
     def encode(poll: Poll, answer: Answer) -> str:
         return "#{}/{}".format(poll.id, answer.id)
 
-    @staticmethod
-    def decode(data: str) -> Optional[Answer]:
-        try:
-            assert len(data) > 0
-            if data.startswith("#"):
-                data = data[1:]
-            poll_id, answer_id = map(int, data.split("/"))
-        except (AssertionError, ValueError) as e:
-            return
-
-        poll = Poll.load(poll_id)
-        if poll is None:
-            return
-
-        for a in poll.answers():
-            if a.id == answer_id:
-                return a
-        else:
-            return
-
 
 def inline_keyboard_markup_answers(poll: Poll) -> InlineKeyboardMarkup:
     keyboard = [[InlineKeyboardButton("{} - {}".format(answer.text, len(answer.voters())),
@@ -85,6 +66,7 @@ def inline_keyboard_markup_admin(poll: Poll) -> InlineKeyboardMarkup:
     keyboard = [
         [InlineKeyboardButton("publish", switch_inline_query=str(poll.id))],
         [InlineKeyboardButton("update", callback_data=".update {}".format(poll.id))],
+        [InlineKeyboardButton("vote", callback_data=".admin_vote {}".format(poll.id))],
     ]
 
     return InlineKeyboardMarkup(keyboard)
@@ -122,6 +104,8 @@ def send_admin_poll(message: Message, poll: Poll):
 
     message.reply_text(
         str(poll),
+        parse_mode=None,
+        disable_web_page_preview=True,
         reply_markup=markup)
 
 
@@ -166,24 +150,39 @@ def inline(bot: Bot, update: Update):
                         )
 
 
-def callback_query(bot: Bot, update: Update):
+def maybe_not_modified(call, *args, **kwargs) -> Any:
+    try:
+        return call(*args, **kwargs)
+
+    except TelegramError as e:
+        # TODO: add `change_count` field to poll in db
+        logger.debug("error message:\n{}".format(e.message))
+        if e.message != "'Bad Request: message is not modified'":
+            raise
+
+
+def callback_query_vote(bot: Bot, update: Update, groups: Tuple[str, str]):
     query: CallbackQuery = update.callback_query
-    data: str = query.data
+    poll_id, answer_id = map(int, groups)
+    answer: Answer
 
     # cases:
     # - 0, error: poll / answer not found due to system fault of fraud attempt
     # - 1, set: user don't have active vote in this answer in this poll
     # - 2, reset: user has active vote in this answer in this poll.
-    answer: Optional[Answer] = PollCallbackData.decode(data)
+    poll = Poll.load(poll_id)
+    if poll is not None:
+        answer: Answer = next((a for a in poll.answers() if a.id == answer_id), None)
 
     if answer is None:
         # case 0, error
-        logger.debug("poll not found, button data: '%s'", data)
+        logger.debug("poll not found, button data: '%s'", query.data)
         query.answer(text="sorry, this poll not found.  probably it has been closed.")
         query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup([]))
 
     else:
         poll: Poll = answer.poll()
+        assert answer in poll.answers()
         user: User = query.from_user
         user_old = next(iter(u for u in answer.voters() if u.id == user.id), None)
 
@@ -204,11 +203,16 @@ def callback_query(bot: Bot, update: Update):
             query.answer(text="you took your reaction back.")
 
         # in both cases 1 and 2 update the view
-        query.edit_message_text(
+        if query.message is not None and poll.owner.id == query.message.chat.id:
+            markup = inline_keyboard_markup_admin(poll)
+        else:
+            markup = inline_keyboard_markup_answers(poll)
+        maybe_not_modified(
+            query.edit_message_text,
             text=str(poll),
             parse_mode=None,
             disable_web_page_preview=True,
-            reply_markup=inline_keyboard_markup_answers(poll))
+            reply_markup=markup)
 
 
 def error(bot, update, error):
@@ -231,17 +235,29 @@ def callback_query_update(bot: Bot, update: Update, groups: Tuple[str]):
     poll_id = int(groups[0])
     poll = Poll.load(poll_id)
 
-    try:
-        query.edit_message_text(
-            text=str(poll),
-            parse_mode=None,
-            disable_web_page_preview=True,
-            reply_markup=inline_keyboard_markup_admin(poll))
-    except TelegramError as e:
-        # TODO: add `change_count` field to poll in db
-        if e.message != "'Bad Request: message is not modified'":
-            raise
+    maybe_not_modified(
+        query.edit_message_text,
+        text=str(poll),
+        parse_mode=None,
+        disable_web_page_preview=True,
+        reply_markup=inline_keyboard_markup_admin(poll))
+
     query.answer(text='\u2705 results updated.')
+
+
+def callback_query_admin_vote(bot: Bot, update: Update, groups: Tuple[str]):
+    query: CallbackQuery = update.callback_query
+    message: Message = query.message
+    chat: Chat = message.chat
+
+    poll_id = int(groups[0])
+    poll = Poll.load(poll_id)
+
+    logger.debug("poll owner id %d, message from chat id %d", poll.owner.id, chat.id)
+    assert poll.owner.id == chat.id, "only poll owner can see this button"
+
+    query.edit_message_reply_markup(
+        reply_markup=inline_keyboard_markup_answers(poll))
 
 
 def main():
@@ -281,7 +297,16 @@ def main():
             callback_query_update,
             pattern=r"\.update (\d+)",
             pass_groups=True))
-    dp.add_handler(CallbackQueryHandler(callback_query))
+    dp.add_handler(
+        CallbackQueryHandler(
+            callback_query_admin_vote,
+            pattern=r"\.admin_vote (\d+)",
+            pass_groups=True))
+    dp.add_handler(
+        CallbackQueryHandler(
+            callback_query_vote,
+            pattern=r"#(\d+)/(\d+)",
+            pass_groups=True))
 
     # log all errors
     dp.add_error_handler(error)
