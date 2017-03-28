@@ -1,0 +1,1 @@
+This bot will help you create and share multiple-choice polls.
