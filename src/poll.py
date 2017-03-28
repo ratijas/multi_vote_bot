@@ -1,11 +1,11 @@
+import logging
 import sqlite3
 from typing import List, Optional
 
-import logging
 from telegram import User
 
-from fs import db_path
 from answer import Answer
+from fs import db_path
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -78,8 +78,11 @@ class Poll(object):
                                        "\n\n".join(map(str, self.answers())),
                                        footer)
 
+    def __eq__(self, other):
+        return self.id == other.id
+
     @classmethod
-    def load(cls, poll_id) -> Optional['Poll']:
+    def load(cls, poll_id: int) -> Optional['Poll']:
         with sqlite3.connect(db_path) as conn:
             conn.row_factory = sqlite3.Row
             cur = conn.cursor()
@@ -100,25 +103,53 @@ class Poll(object):
     def query(cls, user_id: int, text: str) -> List['Poll']:
         """
         query `Poll`s from the database, sort by last created, limit 50 (telegram limitation).
+
         :param user_id: only creator of a poll can post it
         :param text: query string
         :return: list of polls matching query
         """
         polls: List[Poll] = []
 
+        # cases:
+        # - 0, id: add to results poll with id if valid
+        # - 1, topic: extend results with list of 5 last created polls which topic matches query
+
+        # case 0, id
         try:
             poll_id = int(text)
-        except ValueError as e: pass
+        except ValueError as e:
+            pass
         else:
             poll = cls.load(poll_id)
             if poll is not None:
-                polls.append(poll)
+                if poll.owner.id == user_id:
+                    polls.append(poll)
 
-        polls = list(filter(lambda p: p.owner.id == user_id, polls))
+        # case 2, topic
+        # kind of `unique` function.  has to be rewritten.
+        polls.extend(p for p in
+                     cls._query_topic(user_id, text)
+                     if p not in polls)
 
-        logger.debug("query polls for user id %d, query '%s', total %d", user_id, text, len(polls))
-        for p in polls:
-            logger.debug("\tdetails for poll id %d:", p.id)
-            logger.debug("\t%s", str(p))
+        logger.debug("query polls for user id %d, query '%s', found %d in total",
+                     user_id, text, len(polls))
 
         return polls
+
+    @classmethod
+    def _query_topic(cls, user_id: int, text: str) -> List['Poll']:
+        with sqlite3.connect(db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cur = conn.cursor()
+
+            cur.execute("""
+                SELECT id FROM polls
+                WHERE owner_id = ? AND topic LIKE ?
+                ORDER BY id DESC
+                LIMIT 5
+                """, (user_id, '%{}%'.format(text)))
+            ids = cur.fetchall()
+
+        return list(filter(
+            lambda x: x is not None,
+            (Poll.load(poll_id) for (poll_id,) in ids)))
