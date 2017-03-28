@@ -1,0 +1,14 @@
+version: '2'
+
+volumes:
+  multi_vote_bot:
+    external: true
+
+services:
+  bot:
+    image: ratijas/multi_vote_bot
+
+    build: .
+
+    volumes:
+      - "multi_vote_bot:/root/.local/share/multi_vote_bot"
