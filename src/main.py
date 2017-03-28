@@ -221,7 +221,7 @@ def about(bot: Bot, update: Update):
 
 
 def main():
-    dotenv_path = join(dirname(__file__), '.env')
+    dotenv_path = join(dirname(dirname(__file__)), '.env')
     load_dotenv(dotenv_path)
 
     # Create the EventHandler and pass it your bot's token.
