@@ -408,6 +408,17 @@ def callback_query_stats(bot: Bot, update: Update, groups: Tuple[str]):
     query.answer()
 
 
+def callback_query_not_found(bot: Bot, update: Update):
+    query: CallbackQuery = update.callback_query
+
+    logger.debug("invalid callback query data %r from user id %d", query.data, query.from_user.id)
+
+    query.answer("invalid query")
+    # maybe_not_modified(
+    #     query.edit_message_reply_markup,
+    #     reply_markup=InlineKeyboardMarkup([]))
+
+
 def main():
     dotenv_path = join(dirname(dirname(__file__)), '.env')
     load_dotenv(dotenv_path)
@@ -478,6 +489,9 @@ def main():
             callback_query_stats,
             pattern=r"\.stats (\d+)",
             pass_groups=True))
+    dp.add_handler(
+        CallbackQueryHandler(
+            callback_query_not_found))
 
     # log all errors
     dp.add_error_handler(error)
