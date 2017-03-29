@@ -29,6 +29,8 @@ class Poll(object):
         self._answers.append(a)
 
     def store(self):
+        assert len(self.answers()) > 0
+
         with sqlite3.connect(db_path) as conn:
             cur = conn.cursor()
 
