@@ -162,6 +162,7 @@ def start(bot: Bot, update: Update) -> int:
 
     if query is not None:
         user_id = query.from_user.id
+        query.answer()
     elif message is not None:
         user_id = message.from_user.id
     else:
