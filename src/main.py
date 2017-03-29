@@ -18,6 +18,7 @@ import os
 import sys
 from io import BytesIO
 from os.path import join, dirname
+from queue import Queue
 from typing import Dict, List, Tuple, Callable, TypeVar
 from uuid import uuid4
 
@@ -179,6 +180,20 @@ def add_question(bot: Bot, update: Update) -> int:
                        "please send me the first answer option".format(message.text))
 
     return FIRST_ANSWER
+
+
+def entry_point_add_question(conv_handler: ConversationHandler,
+                             bot: Bot, update: Update, update_queue: Queue):
+    message: Message = update.message
+
+    if message.chat.type == 'private':
+        key = (message.chat.id, message.from_user.id)
+
+        conv_handler.current_conversation = key
+        conv_handler.current_handler = add_question
+        conv_handler.conversations[key] = QUESTION
+
+        update_queue.put(update, True, 1)
 
 
 def add_answer(bot: Bot, update: Update) -> int:
@@ -398,7 +413,6 @@ def main():
         entry_points=[
             CommandHandler("start", start),
             CallbackQueryHandler(start, pattern=r"\.start"),
-            MessageHandler(Filters.text, add_question)
         ],
         allow_reentry=True,
         states={
@@ -417,6 +431,11 @@ def main():
     )
 
     dp.add_handler(conv_handler)
+    dp.add_handler(
+        MessageHandler(
+            Filters.text,
+            lambda *args, **kwargs: entry_point_add_question(conv_handler, *args, **kwargs),
+            pass_update_queue=True))
 
     dp.add_handler(CommandHandler("help", about))
     dp.add_handler(CommandHandler("cancel", cancel_nothing))
