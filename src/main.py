@@ -158,6 +158,23 @@ def create_poll(bot: Bot, update: Update) -> int:
     return ConversationHandler.END
 
 
+def cancel(bot: Bot, update: Update) -> int:
+    message: Message = update.message
+
+    UNFINISHED.pop(message.from_user.id, None)
+    message.reply_text(
+        "the command has been cancelled. just send me something if you want to start.")
+
+    return ConversationHandler.END
+
+
+def cancel_nothing(bot: Bot, update: Update):
+    message: Message = update.message
+
+    message.reply_text(
+        "nothing to cancel anyway.  just send me something if you want to start.")
+
+
 ###############################################################################
 # handlers: inline
 ###############################################################################
@@ -300,12 +317,14 @@ def main():
             ]
         },
         fallbacks=[
+            CommandHandler("cancel", cancel)
         ],
     )
 
     dp.add_handler(conv_handler)
 
     dp.add_handler(CommandHandler("help", about))
+    dp.add_handler(CommandHandler("cancel", cancel_nothing))
 
     dp.add_handler(InlineQueryHandler(inline_query))
 
