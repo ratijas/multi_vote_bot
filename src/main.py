@@ -288,9 +288,12 @@ def callback_query_vote(bot: Bot, update: Update, groups: Tuple[str, str]):
 
     if answer is None:
         # case 0, error
-        logger.debug("poll not found, button data: '%s'", query.data)
+        logger.debug("poll not found, query data %r from user id %d", query.data, query.from_user.id)
+
         query.answer(text="sorry, this poll not found.  probably it has been closed.")
-        query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup([]))
+        maybe_not_modified(
+            query.edit_message_reply_markup,
+            reply_markup=InlineKeyboardMarkup([]))
 
     else:
         poll: Poll = answer.poll()
@@ -301,6 +304,7 @@ def callback_query_vote(bot: Bot, update: Update, groups: Tuple[str, str]):
             # case 1, set
             logger.debug("user id %d voted for answer id %d in poll id %d",
                          query.from_user.id, answer.id, answer.poll().id)
+
             answer.voters().append(user)
             answer.store()
             query.answer(text="you voted for '{}'.".format(answer.text))
@@ -309,6 +313,7 @@ def callback_query_vote(bot: Bot, update: Update, groups: Tuple[str, str]):
             # case 2, reset
             logger.debug("user id %d took his/her reaction back from answer id %d in poll id %d",
                          query.from_user.id, answer.id, answer.poll().id)
+
             answer.voters().remove(user_old)
             answer.store()
             query.answer(text="you took your reaction back.")
@@ -334,7 +339,10 @@ def callback_query_admin_vote(bot: Bot, update: Update, groups: Tuple[str]):
     poll_id = int(groups[0])
     poll = Poll.load(poll_id)
 
-    query.edit_message_reply_markup(
+    logger.debug("owner user id %d want to vote in poll id %d", query.from_user.id, poll.id)
+
+    maybe_not_modified(
+        query.edit_message_reply_markup,
         reply_markup=inline_keyboard_markup_answers(poll))
 
 
