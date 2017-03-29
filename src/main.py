@@ -467,7 +467,7 @@ def main():
     dp.add_handler(
         CallbackQueryHandler(
             callback_query_vote,
-            pattern=r"#(\d+)/(\d+)",
+            pattern=r"#?(\d+)/(\d+)",
             pass_groups=True))
     dp.add_handler(
         CallbackQueryHandler(
