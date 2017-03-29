@@ -1,2 +1,3 @@
 start - create new poll
 help - about this bot
+polls - manage your polls

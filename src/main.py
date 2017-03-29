@@ -30,6 +30,7 @@ from telegram.error import TelegramError
 from telegram.ext import (Updater, CommandHandler, MessageHandler, Filters, ConversationHandler,
                           InlineQueryHandler)
 from telegram.ext.callbackqueryhandler import CallbackQueryHandler
+from telegram.ext.regexhandler import RegexHandler
 from telegram.inlinequery import InlineQuery
 from telegram.update import Update
 from telegram.user import User
@@ -109,6 +110,40 @@ def about(bot: Bot, update: Update):
         "then publish it to groups or send it to individual friends.")
 
 
+def manage(bot: Bot, update: Update):
+    message: Message = update.message
+    user_id = message.from_user.id
+
+    polls = Poll.query(user_id, '', limit=20)
+
+    if len(polls) == 0:
+        message.reply_text(
+            text="you don't have any polls yet.",
+            reply_markup=InlineKeyboardMarkup(
+                [[InlineKeyboardButton("create new poll", callback_data=".start")]]))
+
+    else:
+        text = "your polls\n\n{}".format(
+            "\n\n".join(
+                "{}. {}\n/view_{}".format(i + 1, poll.topic, poll.id)
+                for i, poll in
+                enumerate(polls))
+        )
+        message.reply_text(
+            text,
+            parse_mode=None,
+            disable_web_page_preview=True)
+
+
+def view_poll(bot: Bot, update: Update, groups: Tuple[str]):
+    message: Message = update.message
+
+    poll_id = int(groups[0])
+    poll = Poll.load(poll_id)
+
+    send_admin_poll(message, poll)
+
+
 ###############################################################################
 # conversation: create new poll
 ###############################################################################
@@ -120,9 +155,18 @@ UNFINISHED: Dict[int, Poll] = {}
 
 
 def start(bot: Bot, update: Update) -> int:
-    update.message.reply_text("ok, let's create a new poll.  send me a question first.")
+    query: CallbackQuery = update.callback_query
     message: Message = update.message
-    UNFINISHED[message.from_user.id] = None
+
+    if query is not None:
+        user_id = query.from_user.id
+    elif message is not None:
+        user_id = message.from_user.id
+    else:
+        raise TypeError("unexpected type of update")
+
+    bot.send_message(user_id, "ok, let's create a new poll.  send me a question first.")
+    UNFINISHED[user_id] = None
 
     return QUESTION
 
@@ -352,6 +396,7 @@ def main():
     conv_handler = ConversationHandler(
         entry_points=[
             CommandHandler("start", start),
+            CallbackQueryHandler(start, pattern=r"\.start"),
             MessageHandler(Filters.text, add_question)
         ],
         allow_reentry=True,
@@ -374,6 +419,8 @@ def main():
 
     dp.add_handler(CommandHandler("help", about))
     dp.add_handler(CommandHandler("cancel", cancel_nothing))
+    dp.add_handler(CommandHandler("polls", manage))
+    dp.add_handler(RegexHandler("/view_(.+)", view_poll, pass_groups=True))
 
     dp.add_handler(InlineQueryHandler(inline_query))
 
