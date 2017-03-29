@@ -468,34 +468,17 @@ def main():
 
     dp.add_handler(InlineQueryHandler(inline_query))
 
-    dp.add_handler(
-        CallbackQueryHandler(
-            callback_query_vote,
-            pattern=r"#?(\d+)/(\d+)",
-            pass_groups=True))
-    dp.add_handler(
-        CallbackQueryHandler(
-            callback_query_vote,
-            pattern=r"\.vote (\d+) (\d+)",
-            pass_groups=True))
-    dp.add_handler(
-        CallbackQueryHandler(
-            callback_query_admin_vote,
-            pattern=r"\.admin_vote (\d+)",
-            pass_groups=True))
-    dp.add_handler(
-        CallbackQueryHandler(
-            callback_query_update,
-            pattern=r"\.update (\d+)",
-            pass_groups=True))
-    dp.add_handler(
-        CallbackQueryHandler(
-            callback_query_stats,
-            pattern=r"\.stats (\d+)",
-            pass_groups=True))
-    dp.add_handler(
-        CallbackQueryHandler(
-            callback_query_not_found))
+    for callback, pattern in [
+        (callback_query_vote, r"#?(\d+)/(\d+)"),
+        (callback_query_vote, r"\.vote (\d+) (\d+)"),
+        (callback_query_admin_vote, r"\.admin_vote (\d+)"),
+        (callback_query_update, r"\.update (\d+)"),
+        (callback_query_stats, r"\.stats (\d+)"),
+    ]:
+        dp.add_handler(
+            CallbackQueryHandler(callback, pattern=pattern, pass_groups=True))
+
+    dp.add_handler(CallbackQueryHandler(callback_query_not_found))
 
     # log all errors
     dp.add_error_handler(error)
