@@ -64,8 +64,9 @@ def inline_keyboard_markup_answers(poll: Poll) -> InlineKeyboardMarkup:
 def inline_keyboard_markup_admin(poll: Poll) -> InlineKeyboardMarkup:
     keyboard = [
         [InlineKeyboardButton("publish", switch_inline_query=str(poll.id))],
-        [InlineKeyboardButton("update", callback_data=".update {}".format(poll.id))],
-        [InlineKeyboardButton("vote", callback_data=".admin_vote {}".format(poll.id))],
+        [
+            InlineKeyboardButton("update", callback_data=".update {}".format(poll.id)),
+            InlineKeyboardButton("vote", callback_data=".admin_vote {}".format(poll.id))],
         [InlineKeyboardButton("statistics", callback_data=".stats {}".format(poll.id))],
     ]
 
