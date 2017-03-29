@@ -304,6 +304,7 @@ def main():
     conv_handler = ConversationHandler(
         entry_points=[
             CommandHandler("start", start),
+            MessageHandler(Filters.text, add_question)
         ],
         allow_reentry=True,
         states={
