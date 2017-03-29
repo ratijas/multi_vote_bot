@@ -5,12 +5,16 @@
 Notes:
     InlineKeyboardButton:
         callback_data:
-            comes in exactly one of two forms:
-            - "#<poll id>/<answer id>":
-                used to vote.
-            - ".method_name" or ".method_name param1 param2 ...":
-                call registered inline callback method with optional
-                space-separated parameters.
+            has a common format of ".method_name param1 param2 ...".
+            currently used methods are:
+            - .vote <poll_id> <answer_id>
+                vote for an answer <answer_id> in poll <poll_id>.
+            - .update <poll_id>
+                update poll view in private chat with poll's owner.
+            - .admin_vote <poll_id>
+                poll's owner want to vote him/herself, show keyboard with answers.
+            - .stats <poll_id>
+                upload statistics in json to poll's owner.
 """
 import json
 import logging
