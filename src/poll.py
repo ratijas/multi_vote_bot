@@ -105,12 +105,13 @@ class Poll(object):
             return poll
 
     @classmethod
-    def query(cls, user_id: int, text: str) -> List['Poll']:
+    def query(cls, user_id: int, text: str, limit: int = 5) -> List['Poll']:
         """
         query `Poll`s from the database, sort by last created, limit 50 (telegram limitation).
 
         :param user_id: only creator of a poll can post it
         :param text: query string
+        :param limit: maximum results
         :return: list of polls matching query
         """
         polls: List[Poll] = []
@@ -133,7 +134,7 @@ class Poll(object):
         # case 2, topic
         # kind of `unique` function.  has to be rewritten.
         polls.extend(p for p in
-                     cls._query_topic(user_id, text)
+                     cls._query_topic(user_id, text, limit)
                      if p not in polls)
 
         logger.debug("query polls for user id %d, query '%s', found %d in total",
@@ -142,7 +143,7 @@ class Poll(object):
         return polls
 
     @classmethod
-    def _query_topic(cls, user_id: int, text: str) -> List['Poll']:
+    def _query_topic(cls, user_id: int, text: str, limit: int) -> List['Poll']:
         with sqlite3.connect(db_path) as conn:
             conn.row_factory = sqlite3.Row
             cur = conn.cursor()
@@ -151,8 +152,8 @@ class Poll(object):
                 SELECT id FROM polls
                 WHERE owner_id = ? AND topic LIKE ?
                 ORDER BY id DESC
-                LIMIT 5
-                """, (user_id, '%{}%'.format(text)))
+                LIMIT ?
+                """, (user_id, '%{}%'.format(text), limit))
             ids = cur.fetchall()
 
         return list(filter(
