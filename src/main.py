@@ -12,10 +12,11 @@ Notes:
                 call registered inline callback method with optional
                 space-separated parameters.
 """
-
+import json
 import logging
 import os
 import sys
+from io import BytesIO
 from os.path import join, dirname
 from typing import Dict, List, Tuple, Callable, TypeVar
 from uuid import uuid4
@@ -64,6 +65,7 @@ def inline_keyboard_markup_admin(poll: Poll) -> InlineKeyboardMarkup:
         [InlineKeyboardButton("publish", switch_inline_query=str(poll.id))],
         [InlineKeyboardButton("update", callback_data=".update {}".format(poll.id))],
         [InlineKeyboardButton("vote", callback_data=".admin_vote {}".format(poll.id))],
+        [InlineKeyboardButton("statistics", callback_data=".stats {}".format(poll.id))],
     ]
 
     return InlineKeyboardMarkup(keyboard)
@@ -291,6 +293,52 @@ def callback_query_update(bot: Bot, update: Update, groups: Tuple[str]):
         reply_markup=inline_keyboard_markup_admin(poll))
 
 
+def callback_query_stats(bot: Bot, update: Update, groups: Tuple[str]):
+    """
+    generate json file and send it back to poll's owner.
+    """
+    query: CallbackQuery = update.callback_query
+
+    poll_id = int(groups[0])
+    poll = Poll.load(poll_id)
+
+    if poll.owner.id != query.from_user.id:
+        logger.debug("user id %d attempted to access stats on poll id %d owner %d",
+                     query.from_user.id, poll.id, poll.owner.id)
+        return
+
+    message: Message = query.message
+
+    # select
+    data = {
+        'answers': [
+            {
+                'id': answer.id,
+                'text': answer.text,
+                'voters': {
+                    'total': len(answer.voters()),
+                    '_': [
+                        {
+                            k: v
+                            for k, v in {
+                                'id': voter.id,
+                                'first_name': voter.first_name,
+                                'last_name': voter.last_name,
+                                'username': voter.username,
+                            }.items()
+                            if v}
+                        for voter in answer.voters()]}}
+            for answer in poll.answers()]
+    }
+
+    content = json.dumps(data, indent=4, ensure_ascii=False)
+    raw = BytesIO(content.encode('utf-8'))
+    name = "statistics for poll #{}.json".format(poll.id)
+
+    bot.send_document(poll.owner.id, raw, filename=name)
+    query.answer()
+
+
 def main():
     dotenv_path = join(dirname(dirname(__file__)), '.env')
     load_dotenv(dotenv_path)
@@ -348,6 +396,11 @@ def main():
         CallbackQueryHandler(
             callback_query_update,
             pattern=r"\.update (\d+)",
+            pass_groups=True))
+    dp.add_handler(
+        CallbackQueryHandler(
+            callback_query_stats,
+            pattern=r"\.stats (\d+)",
             pass_groups=True))
 
     # log all errors
