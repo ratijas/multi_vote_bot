@@ -77,17 +77,22 @@ class Answer(object):
 
         assert self.id is not None
 
-    def __str__(self, *args, **kwargs):
+    def __str__(self):
         # percentage for the answer is a ratio of this answer's voters to total unique voters count.
 
-        total = self._poll.total_voters()
+        total = self.poll().total_voters()
         count = len(self.voters())
+        max_count: int = max(len(answer.voters()) for answer in self.poll().answers())
+        relative_percentage: float = count / max_count
         percentage: float = count / total if total != 0 else 0  # 0..1
 
         if count == 0:
             bar = "\u25AB 0%"
         else:
-            bar = "{:\U0001f44d<{}} {}%".format('', max(1, int(percentage * 8)), int(percentage * 100))
+            bar = "{:\U0001f44d<{}} {}%".format(
+                '',
+                max(1, int(relative_percentage * 8)),
+                int(percentage * 100))
 
         return "{} - {}\n{}".format(self.text, count, bar)
 

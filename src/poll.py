@@ -73,7 +73,7 @@ class Poll(object):
                        for answer in self.answers()
                        for voter in answer.voters()))
 
-    def __str__(self, *args, **kwargs):
+    def __str__(self):
         footer = "\U0001f465 "
         total = self.total_voters()
         if total == 0:
