@@ -36,18 +36,26 @@ class Poll(object):
                 cur.execute("""INSERT INTO polls (owner_id, topic) VALUES (?, ?)""",
                             (self.owner.id, self.topic))
                 self.id = cur.lastrowid
+
             else:
                 cur.execute("""UPDATE polls SET owner_id = ?, topic = ? WHERE id = ?""",
                             (self.owner.id, self.topic, self.id))
 
             u = self.owner
             cur.execute("""SELECT * from users WHERE id = ?""", (u.id,))
+
             if cur.fetchone() is None:
-                cur.execute("""INSERT INTO users (first_name, last_name, username, id) VALUES (?, ?, ?, ?)""",
-                            (u.first_name, u.last_name, u.username, u.id))
+                cur.execute("""
+                    INSERT INTO users (first_name, last_name, username, id)
+                    VALUES (?, ?, ?, ?)
+                    """, (u.first_name, u.last_name, u.username, u.id))
+
             else:
-                cur.execute("""UPDATE users SET first_name = ?, last_name = ?, username = ? WHERE id = ?""",
-                            (u.first_name, u.last_name, u.username, u.id))
+                cur.execute("""
+                    UPDATE users
+                    SET first_name = ?, last_name = ?, username = ?
+                    WHERE id = ?
+                    """, (u.first_name, u.last_name, u.username, u.id))
 
             conn.commit()
 
@@ -56,9 +64,6 @@ class Poll(object):
 
         assert self.id is not None
         assert all(a.id is not None for a in self.answers())
-
-    def total_votes(self) -> int:
-        return sum(len(ans.voters()) for ans in self.answers())
 
     def total_voters(self) -> int:
         # TODO: replace with sql query

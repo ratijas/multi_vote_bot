@@ -5,8 +5,6 @@ from telegram import User
 
 from fs import db_path
 
-__all__ = ('Answer', 'Action')
-
 
 class Answer(object):
     def __init__(self, poll: 'Poll', text: str):
@@ -50,23 +48,31 @@ class Answer(object):
             # store users
             for v in self.voters():
                 cur.execute("""SELECT * FROM users WHERE id = ?""", (v.id,))
+
                 if cur.fetchone() is None:
-                    cur.execute("""INSERT INTO users (id, first_name, last_name, username) VALUES (?, ?, ?, ?)""",
-                                (v.id, v.first_name, v.last_name, v.username))
+                    cur.execute("""
+                        INSERT INTO users (id, first_name, last_name, username)
+                        VALUES (?, ?, ?, ?)
+                        """, (v.id, v.first_name, v.last_name, v.username))
+
                 else:
-                    cur.execute("""UPDATE users SET first_name = ?, last_name = ?, username = ? WHERE id = ?""",
-                                (v.first_name, v.last_name, v.username, v.id))
+                    cur.execute("""
+                        UPDATE users
+                        SET first_name = ?, last_name = ?, username = ?
+                        WHERE id = ?
+                        """, (v.first_name, v.last_name, v.username, v.id))
 
             # store connections
             # # remove all connection with this answer
             cur.execute("""DELETE FROM votes WHERE poll_id = ? AND answer_id = ?""",
                         (self.poll().id, self.id))
-            conn.commit()
 
             # # store current voters
             for v in self.voters():
-                cur.execute("""INSERT INTO votes (user_id, poll_id, answer_id) VALUES (?, ?, ?)""",
-                            (v.id, self._poll.id, self.id))
+                cur.execute("""
+                    INSERT INTO votes (user_id, poll_id, answer_id)
+                    VALUES (?, ?, ?)
+                    """, (v.id, self._poll.id, self.id))
             conn.commit()
 
         assert self.id is not None
@@ -105,7 +111,11 @@ class Answer(object):
             # next, load voters for this option
 
             cur.execute("""
-                SELECT u.id AS id, u.first_name AS first_name, u.last_name AS last_name, u.username AS username
+                SELECT
+                    u.id AS id,
+                    u.first_name AS first_name,
+                    u.last_name AS last_name,
+                    u.username AS username
                 FROM users u
                 INNER JOIN
                 (SELECT * FROM votes v WHERE v.poll_id = ? AND v.answer_id = ?) v

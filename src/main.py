@@ -17,7 +17,7 @@ import logging
 import os
 import sys
 from os.path import join, dirname
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Dict, List, Tuple, Callable, TypeVar
 from uuid import uuid4
 
 from dotenv import load_dotenv
@@ -25,7 +25,6 @@ from telegram import (Message, InlineKeyboardMarkup, InlineKeyboardButton,
                       InlineQueryResultArticle, InputTextMessageContent)
 from telegram.bot import Bot
 from telegram.callbackquery import CallbackQuery
-from telegram.chat import Chat
 from telegram.error import TelegramError
 from telegram.ext import (Updater, CommandHandler, MessageHandler, Filters, ConversationHandler,
                           InlineQueryHandler)
@@ -37,6 +36,8 @@ from telegram.user import User
 from answer import Answer
 from poll import Poll
 
+T = TypeVar('T')
+
 # Enable logging
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
                     level=logging.INFO)
@@ -44,21 +45,17 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
-QUESTION, FIRST_ANSWER, ANSWERS, = range(3)
 
-UNFINISHED: Dict[int, Poll] = {}
-
-
-class PollCallbackData(object):
-    @staticmethod
-    def encode(poll: Poll, answer: Answer) -> str:
-        return "#{}/{}".format(poll.id, answer.id)
-
+###############################################################################
+# utils
+###############################################################################
 
 def inline_keyboard_markup_answers(poll: Poll) -> InlineKeyboardMarkup:
-    keyboard = [[InlineKeyboardButton("{} - {}".format(answer.text, len(answer.voters())),
-                                      callback_data=PollCallbackData.encode(poll, answer))]
-                for answer in poll.answers()]
+    keyboard = [
+        [InlineKeyboardButton(
+            "{} - {}".format(answer.text, len(answer.voters())),
+            callback_data=".vote {} {}".format(poll.id, answer.id))]
+        for answer in poll.answers()]
     return InlineKeyboardMarkup(keyboard)
 
 
@@ -70,6 +67,54 @@ def inline_keyboard_markup_admin(poll: Poll) -> InlineKeyboardMarkup:
     ]
 
     return InlineKeyboardMarkup(keyboard)
+
+
+def send_admin_poll(message: Message, poll: Poll):
+    markup = inline_keyboard_markup_admin(poll)
+
+    message.reply_text(
+        str(poll),
+        parse_mode=None,
+        disable_web_page_preview=True,
+        reply_markup=markup)
+
+
+def maybe_not_modified(call: Callable[..., T], *args, **kwargs) -> T:
+    try:
+        return call(*args, **kwargs)
+
+    except TelegramError as e:
+        # TODO: add `change_count` field to poll in db
+        if e.message != "'Bad Request: message is not modified'":
+            raise
+
+
+###############################################################################
+# handlers: global
+###############################################################################
+
+def error(bot, update, error):
+    import traceback
+    logger.warning('Update "%s" caused error "%s"' % (update, error))
+    traceback.print_exc(file=sys.stdout)
+
+
+def about(bot: Bot, update: Update):
+    message: Message = update.message
+    message.reply_text(
+        "This bot will help you create multiple-choice polls. "
+        "Use /start to create a multiple-choice poll here, "
+        "then publish it to groups or send it to individual friends.")
+
+
+###############################################################################
+# conversation: create new poll
+###############################################################################
+
+QUESTION, FIRST_ANSWER, ANSWERS, = range(3)
+
+# TODO: use `user_data` for that
+UNFINISHED: Dict[int, Poll] = {}
 
 
 def start(bot: Bot, update: Update) -> int:
@@ -99,16 +144,6 @@ def add_answer(bot: Bot, update: Update) -> int:
     return ANSWERS
 
 
-def send_admin_poll(message: Message, poll: Poll):
-    markup = inline_keyboard_markup_admin(poll)
-
-    message.reply_text(
-        str(poll),
-        parse_mode=None,
-        disable_web_page_preview=True,
-        reply_markup=markup)
-
-
 def create_poll(bot: Bot, update: Update) -> int:
     message: Message = update.message
     poll = UNFINISHED.pop(message.from_user.id)
@@ -123,7 +158,11 @@ def create_poll(bot: Bot, update: Update) -> int:
     return ConversationHandler.END
 
 
-def inline(bot: Bot, update: Update):
+###############################################################################
+# handlers: inline
+###############################################################################
+
+def inline_query(bot: Bot, update: Update):
     inline_query: InlineQuery = update.inline_query
     query: str = inline_query.query
 
@@ -142,24 +181,17 @@ def inline(bot: Bot, update: Update):
                 description=" / ".join(answer.text for answer in poll.answers()),
                 reply_markup=inline_keyboard_markup_answers(poll)))
 
-    inline_query.answer(results,
-                        is_personal=True,
-                        cache_time=30,
-                        switch_pm_text="Create new poll",
-                        switch_pm_parameter="new_poll",
-                        )
+    inline_query.answer(
+        results,
+        is_personal=True,
+        cache_time=30,
+        switch_pm_text="Create new poll",
+        switch_pm_parameter="new_poll")
 
 
-def maybe_not_modified(call, *args, **kwargs) -> Any:
-    try:
-        return call(*args, **kwargs)
-
-    except TelegramError as e:
-        # TODO: add `change_count` field to poll in db
-        logger.debug("error message:\n{}".format(e.message))
-        if e.message != "'Bad Request: message is not modified'":
-            raise
-
+###############################################################################
+# handlers: callback query
+###############################################################################
 
 def callback_query_vote(bot: Bot, update: Update, groups: Tuple[str, str]):
     query: CallbackQuery = update.callback_query
@@ -182,7 +214,6 @@ def callback_query_vote(bot: Bot, update: Update, groups: Tuple[str, str]):
 
     else:
         poll: Poll = answer.poll()
-        assert answer in poll.answers()
         user: User = query.from_user
         user_old = next(iter(u for u in answer.voters() if u.id == user.id), None)
 
@@ -205,8 +236,10 @@ def callback_query_vote(bot: Bot, update: Update, groups: Tuple[str, str]):
         # in both cases 1 and 2 update the view
         if query.message is not None and poll.owner.id == query.message.chat.id:
             markup = inline_keyboard_markup_admin(poll)
+
         else:
             markup = inline_keyboard_markup_answers(poll)
+
         maybe_not_modified(
             query.edit_message_text,
             text=str(poll),
@@ -215,18 +248,14 @@ def callback_query_vote(bot: Bot, update: Update, groups: Tuple[str, str]):
             reply_markup=markup)
 
 
-def error(bot, update, error):
-    import traceback
-    logger.warning('Update "%s" caused error "%s"' % (update, error))
-    traceback.print_exc(file=sys.stdout)
+def callback_query_admin_vote(bot: Bot, update: Update, groups: Tuple[str]):
+    query: CallbackQuery = update.callback_query
 
+    poll_id = int(groups[0])
+    poll = Poll.load(poll_id)
 
-def about(bot: Bot, update: Update):
-    message: Message = update.message
-    message.reply_text(
-        "This bot will help you create multiple-choice polls. "
-        "Use /start to create a multiple-choice poll here, "
-        "then publish it to groups or send it to individual friends.")
+    query.edit_message_reply_markup(
+        reply_markup=inline_keyboard_markup_answers(poll))
 
 
 def callback_query_update(bot: Bot, update: Update, groups: Tuple[str]):
@@ -235,29 +264,14 @@ def callback_query_update(bot: Bot, update: Update, groups: Tuple[str]):
     poll_id = int(groups[0])
     poll = Poll.load(poll_id)
 
+    query.answer(text='\u2705 results updated.')
+
     maybe_not_modified(
         query.edit_message_text,
         text=str(poll),
         parse_mode=None,
         disable_web_page_preview=True,
         reply_markup=inline_keyboard_markup_admin(poll))
-
-    query.answer(text='\u2705 results updated.')
-
-
-def callback_query_admin_vote(bot: Bot, update: Update, groups: Tuple[str]):
-    query: CallbackQuery = update.callback_query
-    message: Message = query.message
-    chat: Chat = message.chat
-
-    poll_id = int(groups[0])
-    poll = Poll.load(poll_id)
-
-    logger.debug("poll owner id %d, message from chat id %d", poll.owner.id, chat.id)
-    assert poll.owner.id == chat.id, "only poll owner can see this button"
-
-    query.edit_message_reply_markup(
-        reply_markup=inline_keyboard_markup_answers(poll))
 
 
 def main():
@@ -271,7 +285,9 @@ def main():
     dp = updater.dispatcher
 
     conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("start", start)],
+        entry_points=[
+            CommandHandler("start", start),
+        ],
         allow_reentry=True,
         states={
             QUESTION: [
@@ -280,7 +296,8 @@ def main():
                 MessageHandler(Filters.text, add_answer)],
             ANSWERS: [
                 MessageHandler(Filters.text, add_answer),
-                CommandHandler("done", create_poll)]
+                CommandHandler("done", create_poll)
+            ]
         },
         fallbacks=[
         ],
@@ -290,12 +307,17 @@ def main():
 
     dp.add_handler(CommandHandler("help", about))
 
-    dp.add_handler(InlineQueryHandler(inline))
+    dp.add_handler(InlineQueryHandler(inline_query))
 
     dp.add_handler(
         CallbackQueryHandler(
-            callback_query_update,
-            pattern=r"\.update (\d+)",
+            callback_query_vote,
+            pattern=r"#(\d+)/(\d+)",
+            pass_groups=True))
+    dp.add_handler(
+        CallbackQueryHandler(
+            callback_query_vote,
+            pattern=r"\.vote (\d+) (\d+)",
             pass_groups=True))
     dp.add_handler(
         CallbackQueryHandler(
@@ -304,8 +326,8 @@ def main():
             pass_groups=True))
     dp.add_handler(
         CallbackQueryHandler(
-            callback_query_vote,
-            pattern=r"#(\d+)/(\d+)",
+            callback_query_update,
+            pattern=r"\.update (\d+)",
             pass_groups=True))
 
     # log all errors
