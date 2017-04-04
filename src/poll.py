@@ -76,8 +76,10 @@ class Poll(object):
     def __str__(self):
         footer = "\U0001f465 "
         total = self.total_voters()
+
         if total == 0:
             footer += "Nobody voted so far."
+
         else:
             footer += "{} people voted so far.".format(total)
 
