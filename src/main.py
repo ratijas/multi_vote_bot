@@ -41,7 +41,8 @@ from telegram.update import Update
 from telegram.user import User
 
 from answer import Answer
-from poll import Poll
+from paginate import paginate
+from poll import Poll, MAX_ANSWERS, MAX_POLLS_PER_USER
 
 T = TypeVar('T')
 
@@ -51,6 +52,8 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
+
+POLLS_PER_PAGE = 5
 
 
 ###############################################################################
@@ -63,6 +66,7 @@ def inline_keyboard_markup_answers(poll: Poll) -> InlineKeyboardMarkup:
             return title
         else:
             return "{} - {}".format(title, count)
+
     keyboard = [
         [InlineKeyboardButton(
             text(answer.text, len(answer.voters())),
@@ -125,7 +129,7 @@ def manage(bot: Bot, update: Update):
     message: Message = update.message
     user_id = message.from_user.id
 
-    polls = Poll.query(user_id, '', limit=20)
+    polls = Poll.query(user_id, limit=MAX_POLLS_PER_USER)
 
     if len(polls) == 0:
         message.reply_text(
@@ -134,16 +138,26 @@ def manage(bot: Bot, update: Update):
                 [[InlineKeyboardButton("create new poll", callback_data=".start")]]))
 
     else:
-        text = "your polls\n\n{}".format(
-            "\n\n".join(
-                "{}. {}\n/view_{}".format(i + 1, poll.topic, poll.id)
-                for i, poll in
-                enumerate(polls))
-        )
         message.reply_text(
-            text,
+            manage_polls_message(polls, 0, POLLS_PER_PAGE),
             parse_mode=None,
-            disable_web_page_preview=True)
+            disable_web_page_preview=True,
+            reply_markup=paginate(len(polls), 0, POLLS_PER_PAGE,
+                                  manage_polls_callback_data))
+
+
+def manage_polls_callback_data(offset):
+    return '.manage {}'.format(offset)
+
+
+def manage_polls_message(polls: List[Poll], offset: int, count: int) -> str:
+    text = "your polls\n\n{}".format(
+        "\n\n".join(
+            "{}. {}\n/view_{}".format(i + 1, poll.topic, poll.id)
+            for i, poll in
+            enumerate(polls[offset: offset + count], start=offset))
+    )
+    return text
 
 
 def view_poll(bot: Bot, update: Update, groups: Tuple[str]):
@@ -208,12 +222,18 @@ def entry_point_add_question(conv_handler: ConversationHandler,
 
 def add_answer(bot: Bot, update: Update) -> int:
     message: Message = update.message
-    UNFINISHED[message.from_user.id].add_answer(update.message.text)
-    message.reply_text(
-        "nice.  feel free to add more answer options.\n\n"
-        "when you've added enough, simply send /done.")
+    poll: Poll = UNFINISHED[message.from_user.id]
+    poll.add_answer(update.message.text)
 
-    return ANSWERS
+    if len(poll.answers()) == MAX_ANSWERS:
+        return create_poll(bot, update)
+
+    else:
+        message.reply_text(
+            "nice.  feel free to add more answer options.\n\n"
+            "when you've added enough, simply send /done.")
+
+        return ANSWERS
 
 
 def create_poll(bot: Bot, update: Update) -> int:
@@ -417,6 +437,22 @@ def callback_query_stats(bot: Bot, update: Update, groups: Tuple[str]):
     query.answer()
 
 
+def callback_query_manage(bot: Bot, update: Update, groups: Tuple[str]):
+    query: CallbackQuery = update.callback_query
+
+    offset = int(groups[0])
+
+    polls: List[Poll] = Poll.query(query.from_user.id, limit=MAX_POLLS_PER_USER)
+
+    maybe_not_modified(
+        query.edit_message_text,
+        text=manage_polls_message(polls, offset, POLLS_PER_PAGE),
+        parse_mode=None,
+        disable_web_page_preview=True,
+        reply_markup=paginate(len(polls), offset, POLLS_PER_PAGE,
+                              manage_polls_callback_data))
+
+
 def callback_query_not_found(bot: Bot, update: Update):
     query: CallbackQuery = update.callback_query
 
@@ -479,6 +515,7 @@ def main():
         (callback_query_admin_vote, r"\.admin_vote (\d+)"),
         (callback_query_update, r"\.update (\d+)"),
         (callback_query_stats, r"\.stats (\d+)"),
+        (callback_query_manage, r"\.manage (\d+)")
     ]:
         dp.add_handler(
             CallbackQueryHandler(callback, pattern=pattern, pass_groups=True))

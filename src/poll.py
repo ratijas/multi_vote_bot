@@ -10,6 +10,9 @@ from fs import db_path
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
+MAX_ANSWERS = 50
+MAX_POLLS_PER_USER = 50
+
 
 class Poll(object):
     def __init__(self, owner: User, topic: str):
@@ -109,7 +112,7 @@ class Poll(object):
             return poll
 
     @classmethod
-    def query(cls, user_id: int, text: str, limit: int = 5) -> List['Poll']:
+    def query(cls, user_id: int, text: str = '', limit: int = 5) -> List['Poll']:
         """
         query `Poll`s from the database, sort by last created, limit 50 (telegram limitation).
 
