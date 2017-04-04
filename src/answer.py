@@ -125,6 +125,7 @@ class Answer(object):
                 INNER JOIN
                 (SELECT * FROM votes v WHERE v.poll_id = ? AND v.answer_id = ?) v
                 ON u.id = v.user_id
+                ORDER BY u.id DESC
                 """, (poll.id, answer.id))
 
             for row in cur.fetchall():
@@ -151,7 +152,12 @@ class Answer(object):
             conn.row_factory = sqlite3.Row
             cur = conn.cursor()
 
-            cur.execute("""SELECT id FROM answers WHERE poll_id = ?""", (poll.id,))
+            cur.execute("""
+                SELECT id
+                FROM answers
+                WHERE poll_id = ?
+                ORDER BY id ASC
+                """, (poll.id,))
             rows: List[sqlite3.Row] = cur.fetchall()
 
         for row in rows:
