@@ -58,9 +58,14 @@ logger.setLevel(logging.DEBUG)
 ###############################################################################
 
 def inline_keyboard_markup_answers(poll: Poll) -> InlineKeyboardMarkup:
+    def text(title: str, count: int):
+        if count == 0:
+            return title
+        else:
+            return "{} - {}".format(title, count)
     keyboard = [
         [InlineKeyboardButton(
-            "{} - {}".format(answer.text, len(answer.voters())),
+            text(answer.text, len(answer.voters())),
             callback_data=".vote {} {}".format(poll.id, answer.id))]
         for answer in poll.answers()]
     return InlineKeyboardMarkup(keyboard)
