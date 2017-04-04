@@ -83,7 +83,7 @@ class Answer(object):
         total = self.poll().total_voters()
         count = len(self.voters())
         max_count: int = max(len(answer.voters()) for answer in self.poll().answers())
-        relative_percentage: float = count / max_count
+        relative_percentage: float = count / max_count if max_count != 0 else 0
         percentage: float = count / total if total != 0 else 0  # 0..1
 
         if count == 0:
