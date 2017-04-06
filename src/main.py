@@ -166,7 +166,8 @@ def view_poll(bot: Bot, update: Update, groups: Tuple[str]):
     poll_id = int(groups[0])
     poll = Poll.load(poll_id)
 
-    send_admin_poll(message, poll)
+    if poll.owner.id == message.from_user.id:
+        send_admin_poll(message, poll)
 
 
 ###############################################################################
