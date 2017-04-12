@@ -78,6 +78,7 @@ def inline_keyboard_markup_answers(poll: Poll) -> InlineKeyboardMarkup:
 def inline_keyboard_markup_admin(poll: Poll) -> InlineKeyboardMarkup:
     keyboard = [
         [InlineKeyboardButton("publish", switch_inline_query=str(poll.id))],
+        [InlineKeyboardButton("share link", callback_data=".share {}".format(poll.id))],
         [
             InlineKeyboardButton("update", callback_data=".update {}".format(poll.id)),
             InlineKeyboardButton("vote", callback_data=".admin_vote {}".format(poll.id))],
@@ -85,6 +86,17 @@ def inline_keyboard_markup_admin(poll: Poll) -> InlineKeyboardMarkup:
     ]
 
     return InlineKeyboardMarkup(keyboard)
+
+
+def send_vote_poll(message: Message, poll: Poll):
+    markup = inline_keyboard_markup_answers(poll)
+
+    message.reply_text(
+        str(poll),
+        parse_mode=None,
+        disable_web_page_preview=True,
+        reply_markup=markup
+    )
 
 
 def send_admin_poll(message: Message, poll: Poll):
@@ -158,6 +170,15 @@ def manage_polls_message(polls: List[Poll], offset: int, count: int) -> str:
             enumerate(polls[offset: offset + count], start=offset))
     )
     return text
+
+
+def start_with_poll(bot: Bot, update: Update, groups: Tuple[str]):
+    message: Message = update.message
+
+    poll_id = int(groups[0])
+    poll = Poll.load(poll_id)
+
+    send_vote_poll(message, poll)
 
 
 def view_poll(bot: Bot, update: Update, groups: Tuple[str]):
@@ -454,6 +475,20 @@ def callback_query_manage(bot: Bot, update: Update, groups: Tuple[str]):
                               manage_polls_callback_data))
 
 
+def callback_query_share(bot: Bot, update: Update, groups: Tuple[str]):
+    query: CallbackQuery = update.callback_query
+
+    poll_id = groups[0]
+
+    bot.send_message(
+        query.from_user.id,
+        "https://telegram.me/multi_vote_bot?start=poll_id={}".format(poll_id),
+        parse_mode=None,
+        disable_web_page_preview=True,
+    )
+    query.answer()
+
+
 def callback_query_not_found(bot: Bot, update: Update):
     query: CallbackQuery = update.callback_query
 
@@ -474,6 +509,8 @@ def main():
 
     # Get the dispatcher to register handlers
     dp = updater.dispatcher
+
+    dp.add_handler(RegexHandler("/start poll_id=(.+)", start_with_poll, pass_groups=True))
 
     conv_handler = ConversationHandler(
         entry_points=[
@@ -516,7 +553,8 @@ def main():
         (callback_query_admin_vote, r"\.admin_vote (\d+)"),
         (callback_query_update, r"\.update (\d+)"),
         (callback_query_stats, r"\.stats (\d+)"),
-        (callback_query_manage, r"\.manage (\d+)")
+        (callback_query_manage, r"\.manage (\d+)"),
+        (callback_query_share, r"\.share (\d+)"),
     ]:
         dp.add_handler(
             CallbackQueryHandler(callback, pattern=pattern, pass_groups=True))
