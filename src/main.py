@@ -571,7 +571,24 @@ def main():
     dp.add_error_handler(error)
 
     # Start the Bot
-    updater.start_polling()
+    webhook_url = os.environ.get('WEBHOOK_URL', None)
+    if webhook_url:
+        kw = {}
+
+        port = os.environ.get('PORT', None)
+        if port is not None:
+            kw['port'] = int(port)
+
+        listen = os.environ.get('LISTEN', None)
+        if listen is not None:
+            kw['listen'] = listen
+
+        logger.debug("start webhook on %s:%s url %s", listen, port, webhook_url)
+
+        updater.bot.set_webhook(url=webhook_url)
+        updater.start_webhook(**kw)
+    else:
+        updater.start_polling()
 
     # Run the bot until you press Ctrl-C or the process receives SIGINT,
     # SIGTERM or SIGABRT. This should be used most of the time, since
