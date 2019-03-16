@@ -54,7 +54,7 @@ from answer import Answer
 import log
 from paginate import paginate
 from poll import Poll, MAX_ANSWERS, MAX_POLLS_PER_USER
-from state import StateManager
+from state import PersistentConversationHandler, StateManager
 
 T = TypeVar('T')
 
@@ -518,7 +518,7 @@ def main():
 
     dp.add_handler(RegexHandler("/start poll_id=(.+)", start_with_poll, pass_groups=True))
 
-    conv_handler = ConversationHandler(
+    conv_handler = PersistentConversationHandler(
         entry_points=[
             CommandHandler("start", start),
             CallbackQueryHandler(start, pattern=r"\.start"),
