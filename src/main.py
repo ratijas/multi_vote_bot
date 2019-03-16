@@ -58,7 +58,7 @@ from poll import Poll, MAX_ANSWERS, MAX_POLLS_PER_USER
 T = TypeVar('T')
 
 logger = log.getLogger(__name__)
-logger.setLevel(log.DEBUG)
+logger.setLevel(log.INFO)
 
 POLLS_PER_PAGE = 5
 
