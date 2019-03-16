@@ -130,6 +130,7 @@ class Answer(object):
             for row in cur.fetchall():
                 row: sqlite3.Row = row
                 user = User(row['id'],
+                            is_bot=False,
                             first_name=row['first_name'],
                             last_name=row['last_name'],
                             username=row['username'])

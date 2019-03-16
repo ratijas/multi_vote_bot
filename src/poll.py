@@ -103,7 +103,7 @@ class Poll(object):
             row: sqlite3.Row = cur.fetchone()
 
         if row is not None:
-            poll = cls(User(row['owner_id'], ''), row['topic'])
+            poll = cls(User(row['owner_id'], '', False), row['topic'])
             poll.id = row['id']
 
             # next, load answers

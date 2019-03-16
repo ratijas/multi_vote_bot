@@ -26,18 +26,29 @@ from typing import Dict, List, Tuple, Callable, TypeVar
 from uuid import uuid4
 
 from dotenv import load_dotenv
-from telegram import (Message, InlineKeyboardMarkup, InlineKeyboardButton,
-                      InlineQueryResultArticle, InputTextMessageContent)
-from telegram.bot import Bot
-from telegram.callbackquery import CallbackQuery
+from telegram import (
+    Bot,
+    CallbackQuery,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    InlineQuery,
+    InlineQueryResultArticle,
+    InputTextMessageContent,
+    Message,
+    Update,
+    User,
+)
 from telegram.error import TelegramError
-from telegram.ext import (Updater, CommandHandler, MessageHandler, Filters, ConversationHandler,
-                          InlineQueryHandler)
-from telegram.ext.callbackqueryhandler import CallbackQueryHandler
-from telegram.ext.regexhandler import RegexHandler
-from telegram.inlinequery import InlineQuery
-from telegram.update import Update
-from telegram.user import User
+from telegram.ext import (
+    CallbackQueryHandler,
+    CommandHandler,
+    ConversationHandler,
+    Filters,
+    InlineQueryHandler,
+    MessageHandler,
+    RegexHandler,
+    Updater,
+)
 
 from answer import Answer
 import log
@@ -111,7 +122,7 @@ def maybe_not_modified(call: Callable[..., T], *args, **kwargs) -> T:
 
     except TelegramError as e:
         # TODO: add `change_count` field to poll in db
-        if e.message != "'Bad Request: message is not modified'":
+        if e.message != "Message is not modified":
             raise
 
 
