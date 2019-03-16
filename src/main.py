@@ -17,7 +17,6 @@ Notes:
                 upload statistics in json to poll's owner.
 """
 import json
-import logging
 import os
 import sys
 from io import BytesIO
@@ -41,17 +40,14 @@ from telegram.update import Update
 from telegram.user import User
 
 from answer import Answer
+import log
 from paginate import paginate
 from poll import Poll, MAX_ANSWERS, MAX_POLLS_PER_USER
 
 T = TypeVar('T')
 
-# Enable logging
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-                    level=logging.INFO)
-
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+logger = log.getLogger(__name__)
+logger.setLevel(log.DEBUG)
 
 POLLS_PER_PAGE = 5
 

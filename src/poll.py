@@ -1,4 +1,3 @@
-import logging
 import sqlite3
 from typing import List, Optional
 
@@ -6,9 +5,10 @@ from telegram import User
 
 from answer import Answer
 from fs import db_path
+import log
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+logger = log.getLogger(__name__)
+# logger.setLevel(log.DEBUG)
 
 MAX_ANSWERS = 50
 MAX_POLLS_PER_USER = 50
