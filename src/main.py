@@ -478,7 +478,7 @@ def callback_query_share(bot: Bot, update: Update, groups: Tuple[str]):
 
     bot.send_message(
         query.from_user.id,
-        "https://telegram.me/multi_vote_bot?start=poll_id={}".format(poll_id),
+        "https://t.me/{}?start=poll_id={}".format(bot.username, poll_id),
         parse_mode=None,
         disable_web_page_preview=True,
     )
