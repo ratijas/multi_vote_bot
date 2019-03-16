@@ -99,17 +99,34 @@ class Poll(object):
             conn.row_factory = sqlite3.Row
             cur = conn.cursor()
 
-            cur.execute("""SELECT * FROM polls WHERE id = ?""", (poll_id,))
+            cur.execute("""
+                SELECT
+                    p.id         AS id,
+                    p.owner_id   AS owner_id,
+                    p.topic      AS topic,
+                    u.first_name AS first_name,
+                    u.last_name  AS last_name,
+                    u.username   AS username
+                  FROM polls p
+                  JOIN users u
+                    ON p.owner_id = u.id
+                 WHERE p.id = ?
+                 """, (poll_id,))
             row: sqlite3.Row = cur.fetchone()
 
-        if row is not None:
-            poll = cls(User(row['owner_id'], '', False), row['topic'])
-            poll.id = row['id']
+            if row is not None:
+                user = User(row['owner_id'],
+                            is_bot=False,
+                            first_name=row['first_name'],
+                            last_name=row['last_name'],
+                            username=row['username'])
+                poll = cls(user, row['topic'])
+                poll.id = row['id']
 
-            # next, load answers
-            poll._answers = Answer.query(poll)
+                # next, load answers
+                poll._answers = Answer.query(poll)
 
-            return poll
+                return poll
 
     @classmethod
     def query(cls, user_id: int, text: str = '', limit: int = 5) -> List['Poll']:
