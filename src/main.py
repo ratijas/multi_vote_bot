@@ -54,6 +54,7 @@ from answer import Answer
 import log
 from paginate import paginate
 from poll import Poll, MAX_ANSWERS, MAX_POLLS_PER_USER
+from state import StateManager
 
 T = TypeVar('T')
 
@@ -204,8 +205,7 @@ def view_poll(bot: Bot, update: Update, groups: Tuple[str]):
 
 QUESTION, FIRST_ANSWER, ANSWERS, = range(3)
 
-# TODO: use `user_data` for that
-UNFINISHED: Dict[int, Poll] = {}
+states = StateManager()
 
 
 def start(bot: Bot, update: Update) -> int:
@@ -213,22 +213,22 @@ def start(bot: Bot, update: Update) -> int:
     message: Message = update.message
 
     if query is not None:
-        user_id = query.from_user.id
+        user = query.from_user
         query.answer()
     elif message is not None:
-        user_id = message.from_user.id
+        user = message.from_user
     else:
         raise TypeError("unexpected type of update")
 
-    bot.send_message(user_id, "ok, let's create a new poll.  send me a question first.")
-    UNFINISHED[user_id] = None
+    bot.send_message(user.id, "ok, let's create a new poll.  send me a question first.")
+    states[user].reset()
 
     return QUESTION
 
 
 def add_question(bot: Bot, update: Update) -> int:
     message: Message = update.message
-    UNFINISHED[message.from_user.id] = Poll(message.from_user, message.text)
+    states[message.from_user].add_question(message.text)
     message.reply_text("creating a new poll: '{}'\n\n"
                        "please send me the first answer option".format(message.text))
 
@@ -251,8 +251,7 @@ def entry_point_add_question(conv_handler: ConversationHandler,
 
 def add_answer(bot: Bot, update: Update) -> int:
     message: Message = update.message
-    poll: Poll = UNFINISHED[message.from_user.id]
-    poll.add_answer(update.message.text)
+    poll: Poll = states[message.from_user].add_answer(update.message.text)
 
     if len(poll.answers()) == MAX_ANSWERS:
         return create_poll(bot, update)
@@ -267,7 +266,7 @@ def add_answer(bot: Bot, update: Update) -> int:
 
 def create_poll(bot: Bot, update: Update) -> int:
     message: Message = update.message
-    poll = UNFINISHED.pop(message.from_user.id)
+    poll = states[message.from_user].create_poll()
     poll.store()
     logger.debug("user id %d created poll id %d", message.from_user.id, poll.id)
     message.reply_text(
@@ -282,7 +281,7 @@ def create_poll(bot: Bot, update: Update) -> int:
 def cancel(bot: Bot, update: Update) -> int:
     message: Message = update.message
 
-    UNFINISHED.pop(message.from_user.id, None)
+    states[message.from_user].reset()
     message.reply_text(
         "the command has been cancelled. just send me something if you want to start.")
 
