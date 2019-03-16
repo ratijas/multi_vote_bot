@@ -28,35 +28,26 @@ import os
 import sqlite3
 from os.path import join, expanduser
 
-data_dir: str = expanduser("~/.local/share/multi_vote_bot")
-if not os.path.exists(data_dir):
-    os.makedirs(data_dir, exist_ok=True)
+from yoyo import read_migrations
+from yoyo import get_backend
 
-db_path: str = join(data_dir, "data.db")
+import log
 
-with sqlite3.connect(db_path) as conn:
-    cur = conn.cursor()
-    cur.executescript("""
-        CREATE TABLE IF NOT EXISTS polls (
-            id       INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-            owner_id INTEGER                           NOT NULL,
-            topic    TEXT                              NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS users (
-            id         INTEGER PRIMARY KEY NOT NULL,
-            first_name TEXT,
-            last_name  TEXT,
-            username   TEXT
-        );
-        CREATE TABLE IF NOT EXISTS answers (
-            id      INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-            poll_id INTEGER                           NOT NULL,
-            txt     TEXT                              NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS votes (
-            user_id   INTEGER NOT NULL,
-            poll_id   INTEGER NOT NULL,
-            answer_id INTEGER NOT NULL
-        );
-    """)
-    conn.commit()
+DATA_DIR: str = expanduser("~/.local/share/multi_vote_bot")
+if not os.path.exists(DATA_DIR):
+    os.makedirs(DATA_DIR, exist_ok=True)
+
+DB_PATH: str = join(DATA_DIR, "data.db")
+
+def migrate():
+    """ apply yoyo migrations """
+    logger = log.getLogger('yoyo')
+    logger.setLevel(log.DEBUG)
+
+    backend = get_backend('sqlite:///' + DB_PATH)
+    migrations = read_migrations('./migrations')
+    with backend.lock():
+        backend.apply_migrations(backend.to_apply(migrations))
+
+# auto migrate when imported
+migrate()

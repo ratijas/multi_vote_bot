@@ -3,7 +3,7 @@ from typing import List, Optional
 
 from telegram import User
 
-from fs import db_path
+from fs import DB_PATH
 
 
 class Answer(object):
@@ -32,8 +32,7 @@ class Answer(object):
         return self._poll
 
     def store(self):
-
-        with sqlite3.connect(db_path) as conn:
+        with sqlite3.connect(DB_PATH) as conn:
             cur = conn.cursor()
 
             # store answers
@@ -98,7 +97,7 @@ class Answer(object):
 
     @classmethod
     def load(cls, poll: 'Poll', answer_id: int) -> Optional['Answer']:
-        with sqlite3.connect(db_path) as conn:
+        with sqlite3.connect(DB_PATH) as conn:
             conn.row_factory = sqlite3.Row
             cur = conn.cursor()
 
@@ -148,7 +147,7 @@ class Answer(object):
         """
         answers: List[Answer] = []
 
-        with sqlite3.connect(db_path) as conn:
+        with sqlite3.connect(DB_PATH) as conn:
             conn.row_factory = sqlite3.Row
             cur = conn.cursor()
 

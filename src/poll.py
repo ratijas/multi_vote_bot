@@ -4,7 +4,7 @@ from typing import List, Optional
 from telegram import User
 
 from answer import Answer
-from fs import db_path
+from fs import DB_PATH
 import log
 
 logger = log.getLogger(__name__)
@@ -34,7 +34,7 @@ class Poll(object):
     def store(self):
         assert len(self.answers()) > 0
 
-        with sqlite3.connect(db_path) as conn:
+        with sqlite3.connect(DB_PATH) as conn:
             cur = conn.cursor()
 
             if self.id is None:
@@ -95,7 +95,7 @@ class Poll(object):
 
     @classmethod
     def load(cls, poll_id: int) -> Optional['Poll']:
-        with sqlite3.connect(db_path) as conn:
+        with sqlite3.connect(DB_PATH) as conn:
             conn.row_factory = sqlite3.Row
             cur = conn.cursor()
 
@@ -151,7 +151,7 @@ class Poll(object):
 
     @classmethod
     def _query_topic(cls, user_id: int, text: str, limit: int) -> List['Poll']:
-        with sqlite3.connect(db_path) as conn:
+        with sqlite3.connect(DB_PATH) as conn:
             conn.row_factory = sqlite3.Row
             cur = conn.cursor()
 
