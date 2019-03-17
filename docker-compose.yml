@@ -21,6 +21,6 @@ services:
       - ".env"
 
     ports:
-      - '${PORT:-8080}:80'
+      - '127.0.0.1:${PORT:-8080}:80'
 
     restart: always
