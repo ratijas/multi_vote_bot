@@ -11,6 +11,8 @@ for webhooks:
  - when running from docker, `docker-compose.yml` sets `LISTEN` to '0.0.0.0';
  - set up reverse proxy on that URL to forward traffic to the app's host and port.
 
+bot will listen set webhook and handle queries on `WEBHOOK_URL/TOKEN`.
+
 ## run
 `$ docker-compose up`
 

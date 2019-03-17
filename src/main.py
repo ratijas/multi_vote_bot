@@ -23,6 +23,7 @@ from io import BytesIO
 from os.path import join, dirname
 from queue import Queue
 from typing import Dict, List, Tuple, Callable, TypeVar
+import urllib.parse
 from uuid import uuid4
 
 from dotenv import load_dotenv
@@ -511,7 +512,8 @@ def main():
     load_dotenv(dotenv_path)
 
     # Create the EventHandler and pass it your bot's token.
-    updater = Updater(os.environ['TOKEN'])
+    token = os.environ['TOKEN']
+    updater = Updater(token)
 
     # Get the dispatcher to register handlers
     dp = updater.dispatcher
@@ -574,6 +576,10 @@ def main():
     webhook_url = os.environ.get('WEBHOOK_URL', None)
     if webhook_url:
         kw = {}
+
+        # https://stackoverflow.com/questions/55202875/python-urllib-parse-urljoin-on-path-starting-with-numbers-and-colon
+        webhook_url = urllib.parse.urljoin('{}/'.format(webhook_url), './{}'.format(token))
+        kw['url_path'] = '/{0}'.format(token)
 
         port = os.environ.get('PORT', None)
         if port is not None:
