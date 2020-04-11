@@ -21,7 +21,6 @@ import os
 import sys
 import urllib.parse
 from io import BytesIO
-from os.path import dirname, join
 from queue import Queue
 from typing import Callable, List, Optional, Tuple, TypeVar
 from uuid import uuid4
@@ -52,6 +51,7 @@ from telegram.ext import (
 )
 
 from . import log
+from .config import Configuration
 from .model.answer import Answer
 from .model.poll import MAX_ANSWERS, MAX_POLLS_PER_USER, Poll
 from .paginate import paginate
@@ -507,13 +507,12 @@ def callback_query_not_found(bot: Bot, update: Update):
     #     reply_markup=InlineKeyboardMarkup([]))
 
 
-def main():
-    load_dotenv()
-
-    # Create the EventHandler and pass it your bot's token.
-    token = os.environ['TOKEN']
+def get_updater(token: str) -> Updater:
     updater = Updater(token)
+    return updater
 
+
+def configure_updater(updater: Updater):
     # Get the dispatcher to register handlers
     dp = updater.dispatcher
 
@@ -571,24 +570,26 @@ def main():
     # log all errors
     dp.add_error_handler(error)
 
+    return updater
+
+
+def start_updater(updater: Updater, config: Configuration) -> None:
     # Start the Bot
-    webhook_url = os.getenv('WEBHOOK_URL', None)
-    if webhook_url:
+    webhook_url = config.webhook_url
+    if webhook_url is not None:
         kw = {}
 
         # https://stackoverflow.com/questions/55202875/python-urllib-parse-urljoin-on-path-starting-with-numbers-and-colon
-        webhook_url = urllib.parse.urljoin('{}/'.format(webhook_url), './{}'.format(token))
-        kw['url_path'] = '/{}'.format(token)
+        webhook_url = urllib.parse.urljoin('{}/'.format(webhook_url), './{}'.format(config.token))
+        kw['url_path'] = '/{}'.format(config.token)
 
-        port = os.environ.get('PORT', None)
-        if port is not None:
-            kw['port'] = int(port)
+        if config.port is not None:
+            kw['port'] = config.port
 
-        listen = os.environ.get('LISTEN', None)
-        if listen is not None:
-            kw['listen'] = listen
+        if config.listen is not None:
+            kw['listen'] = config.listen
 
-        logger.info("WEBHOOK_URL found, starting webhook on %s:%s url %s", listen, port, webhook_url)
+        logger.info("WEBHOOK_URL found, starting webhook on %s:%s url %s", config.listen, config.port, webhook_url)
 
         updater.bot.set_webhook(url=webhook_url)
         updater.start_webhook(**kw)
@@ -597,6 +598,14 @@ def main():
         logger.info("WEBHOOK_URL not found, starting long polling.")
         updater.start_polling()
 
+
+def main():
+    load_dotenv()
+    config = Configuration.get()
+
+    updater = get_updater(config.token)
+    configure_updater(updater)
+    start_updater(updater, config)
     # Run the bot until you press Ctrl-C or the process receives SIGINT,
     # SIGTERM or SIGABRT. This should be used most of the time, since
     # start_polling() is non-blocking and will stop the bot gracefully.
