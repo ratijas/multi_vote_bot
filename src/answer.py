@@ -12,7 +12,7 @@ if typing.TYPE_CHECKING:
 
 class Answer(object):
     def __init__(self, poll: 'Poll', text: str):
-        self.id: int = None
+        self.id: Optional[int] = None
         self.text: str = text
         self._voters: List[User] = []
         self._poll: 'Poll' = poll
