@@ -1,9 +1,13 @@
 import sqlite3
+import typing
 from typing import List, Optional
 
 from telegram import User
 
 from fs import DB_PATH
+
+if typing.TYPE_CHECKING:
+    from poll import Poll
 
 
 class Answer(object):

@@ -25,7 +25,6 @@ tables:
 """
 
 import os
-import sqlite3
 from os.path import join, expanduser
 
 from yoyo import read_migrations
@@ -39,6 +38,7 @@ if not os.path.exists(DATA_DIR):
 
 DB_PATH: str = join(DATA_DIR, "data.db")
 
+
 def migrate():
     """ apply yoyo migrations """
     logger = log.getLogger('yoyo')
@@ -48,6 +48,7 @@ def migrate():
     migrations = read_migrations('./migrations')
     with backend.lock():
         backend.apply_migrations(backend.to_apply(migrations))
+
 
 # auto migrate when imported
 migrate()

@@ -6,7 +6,6 @@ manager[message.from_user.id].
 
 import json
 import sqlite3
-from typing import Dict
 
 from telegram import User
 from telegram.ext import ConversationHandler
@@ -22,7 +21,6 @@ logger = log.getLogger(__name__)
 ###################
 # User-side state #
 ###################
-
 class UserState:
     def __init__(self, user: User):
         self.user = user
@@ -63,9 +61,6 @@ class UserState:
 
             logger.debug('wrote user %d state: %s', self.user.id, self.state)
 
-    # def store_poll():
-    #     not implemented on purpose
-
     def reset(self):
         with sqlite3.connect(DB_PATH) as conn:
             cur = conn.cursor()
@@ -98,14 +93,15 @@ class StateManager:
     def __getitem__(self, user: User) -> UserState:
         return UserState(user)
 
+
 ######################
 # Conversation state #
 ######################
-
 class SQLiteDictProxy(dict):
     table = "persistent_conversation_state"
 
     def __init__(self, db: str):
+        super().__init__()
         self.db = db
 
     def __contains__(self, key):
@@ -121,7 +117,7 @@ class SQLiteDictProxy(dict):
             cur.execute("""
                 SELECT * FROM {table} WHERE id = ?
                 """.format(table=self.table),
-                (hash(key),))
+                        (hash(key),))
 
             row = cur.fetchone()
             if row is not None:
@@ -138,7 +134,7 @@ class SQLiteDictProxy(dict):
                   INTO {table} (id, state)
                 VALUES (?, ?)
                 """.format(table=self.table),
-                (hash(key), value))
+                        (hash(key), value))
 
     def __delitem__(self, key):
         logger.debug('clear state for key %s hash %d', key, hash(key))
@@ -150,7 +146,7 @@ class SQLiteDictProxy(dict):
                 DELETE FROM {table}
                  WHERE id = ?
                 """.format(table=self.table),
-                (hash(key),))
+                        (hash(key),))
 
     def get(self, key, default=None):
         if key in self:

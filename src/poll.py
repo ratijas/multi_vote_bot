@@ -16,7 +16,7 @@ MAX_POLLS_PER_USER = 50
 
 class Poll(object):
     def __init__(self, owner: User, topic: str):
-        self.id: int = None
+        self.id: Optional[int] = None
         self.owner: User = owner
         self.topic: str = topic
         self._answers: List[Answer] = []

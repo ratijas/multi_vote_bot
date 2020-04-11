@@ -22,7 +22,7 @@ import sys
 from io import BytesIO
 from os.path import join, dirname
 from queue import Queue
-from typing import Dict, List, Tuple, Callable, TypeVar
+from typing import Dict, List, Tuple, Callable, TypeVar, Optional
 import urllib.parse
 from uuid import uuid4
 
@@ -334,7 +334,7 @@ def inline_query(bot: Bot, update: Update):
 def callback_query_vote(bot: Bot, update: Update, groups: Tuple[str, str]):
     query: CallbackQuery = update.callback_query
     poll_id, answer_id = map(int, groups)
-    answer: Answer
+    answer: Optional[Answer] = None
 
     # cases:
     # - 0, error: poll / answer not found due to system fault of fraud attempt
