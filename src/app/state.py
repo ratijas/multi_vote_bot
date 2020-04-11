@@ -10,10 +10,9 @@ import sqlite3
 from telegram import User
 from telegram.ext import ConversationHandler
 
-from fs import DB_PATH
-import log
-from poll import Poll
-
+from . import log
+from .fs import DB_PATH
+from .model.poll import Poll
 
 logger = log.getLogger(__name__)
 

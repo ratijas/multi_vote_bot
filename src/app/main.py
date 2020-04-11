@@ -19,11 +19,11 @@ Notes:
 import json
 import os
 import sys
-from io import BytesIO
-from os.path import join, dirname
-from queue import Queue
-from typing import Dict, List, Tuple, Callable, TypeVar, Optional
 import urllib.parse
+from io import BytesIO
+from os.path import dirname, join
+from queue import Queue
+from typing import Callable, List, Optional, Tuple, TypeVar
 from uuid import uuid4
 
 from dotenv import load_dotenv
@@ -51,11 +51,11 @@ from telegram.ext import (
     Updater,
 )
 
-from answer import Answer
-import log
-from paginate import paginate
-from poll import Poll, MAX_ANSWERS, MAX_POLLS_PER_USER
-from state import PersistentConversationHandler, StateManager
+from . import log
+from .model.answer import Answer
+from .model.poll import MAX_ANSWERS, MAX_POLLS_PER_USER, Poll
+from .paginate import paginate
+from .state import PersistentConversationHandler, StateManager
 
 T = TypeVar('T')
 
@@ -508,8 +508,7 @@ def callback_query_not_found(bot: Bot, update: Update):
 
 
 def main():
-    dotenv_path = join(dirname(dirname(__file__)), '.env')
-    load_dotenv(dotenv_path)
+    load_dotenv()
 
     # Create the EventHandler and pass it your bot's token.
     token = os.environ['TOKEN']
@@ -573,13 +572,13 @@ def main():
     dp.add_error_handler(error)
 
     # Start the Bot
-    webhook_url = os.environ.get('WEBHOOK_URL', None)
+    webhook_url = os.getenv('WEBHOOK_URL', None)
     if webhook_url:
         kw = {}
 
         # https://stackoverflow.com/questions/55202875/python-urllib-parse-urljoin-on-path-starting-with-numbers-and-colon
         webhook_url = urllib.parse.urljoin('{}/'.format(webhook_url), './{}'.format(token))
-        kw['url_path'] = '/{0}'.format(token)
+        kw['url_path'] = '/{}'.format(token)
 
         port = os.environ.get('PORT', None)
         if port is not None:
@@ -589,11 +588,13 @@ def main():
         if listen is not None:
             kw['listen'] = listen
 
-        logger.debug("start webhook on %s:%s url %s", listen, port, webhook_url)
+        logger.info("WEBHOOK_URL found, starting webhook on %s:%s url %s", listen, port, webhook_url)
 
         updater.bot.set_webhook(url=webhook_url)
         updater.start_webhook(**kw)
+
     else:
+        logger.info("WEBHOOK_URL not found, starting long polling.")
         updater.start_polling()
 
     # Run the bot until you press Ctrl-C or the process receives SIGINT,

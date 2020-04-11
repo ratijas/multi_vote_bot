@@ -3,9 +3,9 @@ from typing import List, Optional
 
 from telegram import User
 
-from answer import Answer
-from fs import DB_PATH
-import log
+from app import log
+from app.fs import DB_PATH
+from .answer import Answer
 
 logger = log.getLogger(__name__)
 # logger.setLevel(log.DEBUG)

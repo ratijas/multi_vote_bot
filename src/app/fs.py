@@ -25,11 +25,11 @@ tables:
 """
 
 import os
-from os.path import join, expanduser
+from os.path import expanduser, join
 
 from yoyo import get_backend, read_migrations
 
-import log
+from . import log
 
 logger = log.getLogger('app.fs')
 
