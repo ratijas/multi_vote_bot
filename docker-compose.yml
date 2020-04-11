@@ -1,4 +1,4 @@
-version: '3'
+version: '3.7'
 
 volumes:
   multi_vote_bot:
@@ -24,3 +24,9 @@ services:
       - '127.0.0.1:${PORT:-8080}:80'
 
     restart: always
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
