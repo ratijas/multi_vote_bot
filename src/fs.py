@@ -27,13 +27,15 @@ tables:
 import os
 from os.path import join, expanduser
 
-from yoyo import read_migrations
-from yoyo import get_backend
+from yoyo import get_backend, read_migrations
 
 import log
 
+logger = log.getLogger('app.fs')
+
 DATA_DIR: str = expanduser("~/.local/share/multi_vote_bot")
 if not os.path.exists(DATA_DIR):
+    logger.info("Creating data dir at path %s", DATA_DIR)
     os.makedirs(DATA_DIR, exist_ok=True)
 
 DB_PATH: str = join(DATA_DIR, "data.db")
@@ -41,8 +43,8 @@ DB_PATH: str = join(DATA_DIR, "data.db")
 
 def migrate():
     """ apply yoyo migrations """
-    logger = log.getLogger('yoyo')
-    logger.setLevel(log.DEBUG)
+    logger.info("Migrating to the latest schema")
+    log.getLogger('yoyo').setLevel(log.DEBUG)
 
     backend = get_backend('sqlite:///' + DB_PATH)
     migrations = read_migrations('./migrations')
