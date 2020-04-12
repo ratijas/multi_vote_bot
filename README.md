@@ -1,12 +1,6 @@
 # multi_vote_bot
 multiple-choice polls in telegram.  quite like @vote bot, but allows multiple choice.
 
-# downtime
-
-@multi_vote_bot experiences some downtime time at the moment, due to the usage
-of deprecated telegram bot API features.  times has changed a lot since this
-project was started, but updates are on their way.  stay tuned!
-
 ## set up
 place `TOKEN` in the environment file `.env`.
 
