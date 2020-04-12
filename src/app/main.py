@@ -17,17 +17,15 @@ Notes:
                 upload statistics in json to poll's owner.
 """
 import json
-import os
 import sys
 import urllib.parse
+from functools import partial
 from io import BytesIO
-from queue import Queue
-from typing import Callable, List, Optional, Tuple, TypeVar
+from typing import Callable, List, Optional, TypeVar
 from uuid import uuid4
 
 from dotenv import load_dotenv
 from telegram import (
-    Bot,
     CallbackQuery,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
@@ -38,15 +36,15 @@ from telegram import (
     Update,
     User,
 )
-from telegram.error import TelegramError
 from telegram.ext import (
+    CallbackContext,
     CallbackQueryHandler,
     CommandHandler,
     ConversationHandler,
+    Dispatcher,
     Filters,
     InlineQueryHandler,
     MessageHandler,
-    RegexHandler,
     Updater,
 )
 
@@ -56,6 +54,7 @@ from .model.answer import Answer
 from .model.poll import MAX_ANSWERS, MAX_POLLS_PER_USER, Poll
 from .paginate import paginate
 from .state import PersistentConversationHandler, StateManager
+from .util import ignore_not_modified
 
 T = TypeVar('T')
 
@@ -64,10 +63,12 @@ logger.setLevel(log.INFO)
 
 POLLS_PER_PAGE = 5
 
-
 ###############################################################################
 # utils
 ###############################################################################
+
+HandlerCallback = Callable[[Update, CallbackContext], Optional[int]]
+
 
 def inline_keyboard_markup_answers(poll: Poll) -> InlineKeyboardMarkup:
     def text(title: str, count: int):
@@ -118,27 +119,17 @@ def send_admin_poll(message: Message, poll: Poll):
         reply_markup=markup)
 
 
-def maybe_not_modified(call: Callable[..., T], *args, **kwargs) -> T:
-    try:
-        return call(*args, **kwargs)
-
-    except TelegramError as e:
-        # TODO: add `change_count` field to poll in db
-        if e.message != "Message is not modified":
-            raise
-
-
 ###############################################################################
 # handlers: global
 ###############################################################################
 
-def error(bot, update, error):
+def error(update: Update, context: CallbackContext):
     import traceback
-    logger.warning('Update "%s" caused error "%s"' % (update, error))
+    logger.warning('Update "%s" caused error "%s"' % (update, context.error))
     traceback.print_exc(file=sys.stdout)
 
 
-def about(bot: Bot, update: Update):
+def about(update: Update, context: CallbackContext):
     message: Message = update.message
     message.reply_text(
         "This bot will help you create multiple-choice polls. "
@@ -146,7 +137,7 @@ def about(bot: Bot, update: Update):
         "then publish it to groups or send it to individual friends.")
 
 
-def manage(bot: Bot, update: Update):
+def manage(update: Update, context: CallbackContext):
     message: Message = update.message
     user_id = message.from_user.id
 
@@ -181,19 +172,19 @@ def manage_polls_message(polls: List[Poll], offset: int, count: int) -> str:
     return text
 
 
-def start_with_poll(bot: Bot, update: Update, groups: Tuple[str]):
+def start_with_poll(update: Update, context: CallbackContext):
     message: Message = update.message
 
-    poll_id = int(groups[0])
+    poll_id = int(context.match.groups()[0])
     poll = Poll.load(poll_id)
 
     send_vote_poll(message, poll)
 
 
-def view_poll(bot: Bot, update: Update, groups: Tuple[str]):
+def view_poll(update: Update, context: CallbackContext):
     message: Message = update.message
 
-    poll_id = int(groups[0])
+    poll_id = int(context.match.groups()[0])
     poll = Poll.load(poll_id)
 
     if poll.owner.id == message.from_user.id:
@@ -209,25 +200,26 @@ QUESTION, FIRST_ANSWER, ANSWERS, = range(3)
 states = StateManager()
 
 
-def start(bot: Bot, update: Update) -> int:
-    query: CallbackQuery = update.callback_query
+def start_from_command(update: Update, context: CallbackContext) -> int:
     message: Message = update.message
+    user = message.from_user
+    return start_with_user(user, context)
 
-    if query is not None:
-        user = query.from_user
-        query.answer()
-    elif message is not None:
-        user = message.from_user
-    else:
-        raise TypeError("unexpected type of update")
 
-    bot.send_message(user.id, "ok, let's create a new poll.  send me a question first.")
+def start_from_callback_query(update: Update, context: CallbackContext) -> int:
+    query: CallbackQuery = update.callback_query
+    query.answer()
+    user = query.from_user
+    return start_with_user(user, context)
+
+
+def start_with_user(user: User, context: CallbackContext) -> int:
+    context.bot.send_message(user.id, "ok, let's create a new poll.  send me a question first.")
     states[user].reset()
-
     return QUESTION
 
 
-def add_question(bot: Bot, update: Update) -> int:
+def add_question(update: Update, context: CallbackContext) -> int:
     message: Message = update.message
     states[message.from_user].add_question(message.text)
     message.reply_text("creating a new poll: '{}'\n\n"
@@ -236,8 +228,15 @@ def add_question(bot: Bot, update: Update) -> int:
     return FIRST_ANSWER
 
 
-def entry_point_add_question(conv_handler: ConversationHandler,
-                             bot: Bot, update: Update, update_queue: Queue):
+def entry_point_add_question(conv_handler: ConversationHandler, update: Update, context: CallbackContext):
+    """
+    Force conversation literally out of nothing, but only in private chats.
+
+    The idea is to treat any text message as a question for a new poll.
+    It works by tweaking with internals of the conversation handler, and re-queueing
+    the current update, thus forcing the conversation handler to process it again
+    from the perspective of a question text.
+    """
     message: Message = update.message
 
     if message.chat.type == 'private':
@@ -247,15 +246,15 @@ def entry_point_add_question(conv_handler: ConversationHandler,
         conv_handler.current_handler = add_question
         conv_handler.conversations[key] = QUESTION
 
-        update_queue.put(update, True, 1)
+        context.update_queue.put(update, True, 1)
 
 
-def add_answer(bot: Bot, update: Update) -> int:
+def add_answer(update: Update, context: CallbackContext) -> int:
     message: Message = update.message
     poll: Poll = states[message.from_user].add_answer(update.message.text)
 
     if len(poll.answers()) == MAX_ANSWERS:
-        return create_poll(bot, update)
+        return create_poll(update, context)
 
     else:
         message.reply_text(
@@ -265,7 +264,7 @@ def add_answer(bot: Bot, update: Update) -> int:
         return ANSWERS
 
 
-def create_poll(bot: Bot, update: Update) -> int:
+def create_poll(update: Update, context: CallbackContext) -> int:
     message: Message = update.message
     poll = states[message.from_user].create_poll()
     poll.store()
@@ -279,7 +278,7 @@ def create_poll(bot: Bot, update: Update) -> int:
     return ConversationHandler.END
 
 
-def cancel(bot: Bot, update: Update) -> int:
+def cancel(update: Update, context: CallbackContext) -> int:
     message: Message = update.message
 
     states[message.from_user].reset()
@@ -289,7 +288,7 @@ def cancel(bot: Bot, update: Update) -> int:
     return ConversationHandler.END
 
 
-def cancel_nothing(bot: Bot, update: Update):
+def cancel_nothing(update: Update, context: CallbackContext):
     message: Message = update.message
 
     message.reply_text(
@@ -300,7 +299,7 @@ def cancel_nothing(bot: Bot, update: Update):
 # handlers: inline
 ###############################################################################
 
-def inline_query(bot: Bot, update: Update):
+def inline_query(update: Update, context: CallbackContext):
     inline_query: InlineQuery = update.inline_query
     query: str = inline_query.query
 
@@ -331,9 +330,9 @@ def inline_query(bot: Bot, update: Update):
 # handlers: callback query
 ###############################################################################
 
-def callback_query_vote(bot: Bot, update: Update, groups: Tuple[str, str]):
+def callback_query_vote(update: Update, context: CallbackContext):
     query: CallbackQuery = update.callback_query
-    poll_id, answer_id = map(int, groups)
+    poll_id, answer_id = map(int, context.match.groups())
     answer: Optional[Answer] = None
 
     # cases:
@@ -349,9 +348,8 @@ def callback_query_vote(bot: Bot, update: Update, groups: Tuple[str, str]):
         logger.debug("poll not found, query data %r from user id %d", query.data, query.from_user.id)
 
         query.answer(text="sorry, this poll not found.  probably it has been closed.")
-        maybe_not_modified(
-            query.edit_message_reply_markup,
-            reply_markup=InlineKeyboardMarkup([]))
+        with ignore_not_modified():
+            query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup([]))
 
     else:
         poll: Poll = answer.poll()
@@ -383,50 +381,48 @@ def callback_query_vote(bot: Bot, update: Update, groups: Tuple[str, str]):
         else:
             markup = inline_keyboard_markup_answers(poll)
 
-        maybe_not_modified(
-            query.edit_message_text,
-            text=str(poll),
-            parse_mode=None,
-            disable_web_page_preview=True,
-            reply_markup=markup)
+        with ignore_not_modified():
+            query.edit_message_text(
+                text=str(poll),
+                parse_mode=None,
+                disable_web_page_preview=True,
+                reply_markup=markup)
 
 
-def callback_query_admin_vote(bot: Bot, update: Update, groups: Tuple[str]):
+def callback_query_admin_vote(update: Update, context: CallbackContext):
     query: CallbackQuery = update.callback_query
-
-    poll_id = int(groups[0])
+    poll_id = int(context.match.groups()[0])
     poll = Poll.load(poll_id)
 
     logger.debug("owner user id %d want to vote in poll id %d", query.from_user.id, poll.id)
 
-    maybe_not_modified(
-        query.edit_message_reply_markup,
-        reply_markup=inline_keyboard_markup_answers(poll))
+    with ignore_not_modified():
+        query.edit_message_reply_markup(reply_markup=inline_keyboard_markup_answers(poll))
 
 
-def callback_query_update(bot: Bot, update: Update, groups: Tuple[str]):
+def callback_query_update(update: Update, context: CallbackContext):
     query: CallbackQuery = update.callback_query
 
-    poll_id = int(groups[0])
+    poll_id = int(context.match.groups()[0])
     poll = Poll.load(poll_id)
 
     query.answer(text='\u2705 results updated.')
 
-    maybe_not_modified(
-        query.edit_message_text,
-        text=str(poll),
-        parse_mode=None,
-        disable_web_page_preview=True,
-        reply_markup=inline_keyboard_markup_admin(poll))
+    with ignore_not_modified():
+        query.edit_message_text(
+            text=str(poll),
+            parse_mode=None,
+            disable_web_page_preview=True,
+            reply_markup=inline_keyboard_markup_admin(poll))
 
 
-def callback_query_stats(bot: Bot, update: Update, groups: Tuple[str]):
+def callback_query_stats(update: Update, context: CallbackContext):
     """
     generate json file and send it back to poll's owner.
     """
     query: CallbackQuery = update.callback_query
 
-    poll_id = int(groups[0])
+    poll_id = int(context.match.groups()[0])
     poll = Poll.load(poll_id)
 
     if poll.owner.id != query.from_user.id:
@@ -438,90 +434,86 @@ def callback_query_stats(bot: Bot, update: Update, groups: Tuple[str]):
 
     # select
     data = {
-        'answers': [
-            {
-                'id': answer.id,
-                'text': answer.text,
-                'voters': {
-                    'total': len(answer.voters()),
-                    '_': [
-                        {
-                            k: v
-                            for k, v in {
-                                'id': voter.id,
-                                'first_name': voter.first_name,
-                                'last_name': voter.last_name,
-                                'username': voter.username,
-                            }.items()
-                            if v}
-                        for voter in answer.voters()]}}
-            for answer in poll.answers()]
+        'answers': [{
+            'id': answer.id,
+            'text': answer.text,
+            'voters': {
+                'total': len(answer.voters()),
+                '_': [{
+                    k: v
+                    for k, v in {
+                        'id': voter.id,
+                        'first_name': voter.first_name,
+                        'last_name': voter.last_name,
+                        'username': voter.username,
+                    }.items()
+                    if v
+                } for voter in answer.voters()]
+            }
+        } for answer in poll.answers()]
     }
 
     content = json.dumps(data, indent=4, ensure_ascii=False)
     raw = BytesIO(content.encode('utf-8'))
     name = "statistics for poll #{}.json".format(poll.id)
 
-    bot.send_document(poll.owner.id, raw, filename=name)
+    context.bot.send_document(poll.owner.id, raw, filename=name)
     query.answer()
 
 
-def callback_query_manage(bot: Bot, update: Update, groups: Tuple[str]):
+def callback_query_manage(update: Update, context: CallbackContext):
     query: CallbackQuery = update.callback_query
 
-    offset = int(groups[0])
+    offset = int(context.match.groups()[0])
 
     polls: List[Poll] = Poll.query(query.from_user.id, limit=MAX_POLLS_PER_USER)
 
-    maybe_not_modified(
-        query.edit_message_text,
-        text=manage_polls_message(polls, offset, POLLS_PER_PAGE),
-        parse_mode=None,
-        disable_web_page_preview=True,
-        reply_markup=paginate(len(polls), offset, POLLS_PER_PAGE,
-                              manage_polls_callback_data))
+    with ignore_not_modified():
+        query.edit_message_text(
+            text=manage_polls_message(polls, offset, POLLS_PER_PAGE),
+            parse_mode=None,
+            disable_web_page_preview=True,
+            reply_markup=paginate(len(polls), offset, POLLS_PER_PAGE,
+                                  manage_polls_callback_data))
 
 
-def callback_query_share(bot: Bot, update: Update, groups: Tuple[str]):
+def callback_query_share(update: Update, context: CallbackContext):
     query: CallbackQuery = update.callback_query
 
-    poll_id = groups[0]
+    poll_id = context.match.groups()[0]
 
-    bot.send_message(
+    context.bot.send_message(
         query.from_user.id,
-        "https://t.me/{}?start=poll_id={}".format(bot.username, poll_id),
+        "https://t.me/{}?start=poll_id={}".format(context.bot.username, poll_id),
         parse_mode=None,
         disable_web_page_preview=True,
     )
     query.answer()
 
 
-def callback_query_not_found(bot: Bot, update: Update):
+def callback_query_not_found(update: Update, context: CallbackContext):
     query: CallbackQuery = update.callback_query
 
     logger.debug("invalid callback query data %r from user id %d", query.data, query.from_user.id)
 
     query.answer("invalid query")
-    # maybe_not_modified(
-    #     query.edit_message_reply_markup,
-    #     reply_markup=InlineKeyboardMarkup([]))
 
 
 def get_updater(token: str) -> Updater:
-    updater = Updater(token)
+    updater = Updater(token, use_context=True)
     return updater
 
 
 def configure_updater(updater: Updater):
     # Get the dispatcher to register handlers
-    dp = updater.dispatcher
+    dp: Dispatcher = updater.dispatcher
 
-    dp.add_handler(RegexHandler("/start poll_id=(.+)", start_with_poll, pass_groups=True))
+    dp.add_handler(MessageHandler(Filters.regex(r"/start poll_id=(.+)"), start_with_poll))
 
     conv_handler = PersistentConversationHandler(
         entry_points=[
-            CommandHandler("start", start),
-            CallbackQueryHandler(start, pattern=r"\.start"),
+            CommandHandler("start", start_from_command),
+            CallbackQueryHandler(start_from_callback_query, pattern=r"\.start"),
         ],
         allow_reentry=True,
         states={
@@ -530,26 +522,31 @@ def configure_updater(updater: Updater):
             FIRST_ANSWER: [
                 MessageHandler(Filters.text, add_answer)],
             ANSWERS: [
+                CommandHandler("done", create_poll),
                 MessageHandler(Filters.text, add_answer),
-                CommandHandler("done", create_poll)
             ]
         },
         fallbacks=[
             CommandHandler("cancel", cancel)
         ],
+        per_chat=True,
+        per_user=True,
+        # No, we don't need per_message, despite what warning says.
+        # Conversation is global for chat with user, and CallbackQueryHandler is only used to
+        # enter conversation from anywhere using "Start" inline button under an empty polls list.
+        per_message=False,
     )
 
     dp.add_handler(conv_handler)
     dp.add_handler(
         MessageHandler(
             Filters.text,
-            lambda *args, **kwargs: entry_point_add_question(conv_handler, *args, **kwargs),
-            pass_update_queue=True))
+            partial(entry_point_add_question, conv_handler)))
 
     dp.add_handler(CommandHandler("help", about))
     dp.add_handler(CommandHandler("cancel", cancel_nothing))
     dp.add_handler(CommandHandler("polls", manage))
-    dp.add_handler(RegexHandler("/view_(.+)", view_poll, pass_groups=True))
+    dp.add_handler(MessageHandler(Filters.regex(r"/view_(.+)"), view_poll))
 
     dp.add_handler(InlineQueryHandler(inline_query))
 
@@ -562,8 +559,7 @@ def configure_updater(updater: Updater):
         (callback_query_manage, r"\.manage (\d+)"),
         (callback_query_share, r"\.share (\d+)"),
     ]:
-        dp.add_handler(
-            CallbackQueryHandler(callback, pattern=pattern, pass_groups=True))
+        dp.add_handler(CallbackQueryHandler(callback, pattern=pattern))
 
     dp.add_handler(CallbackQueryHandler(callback_query_not_found))
 
