@@ -50,6 +50,7 @@ from telegram.ext import (
 
 from . import log
 from .config import Configuration
+from .filters import FiltersExt
 from .model.answer import Answer
 from .model.poll import MAX_ANSWERS, MAX_POLLS_PER_USER, Poll
 from .paginate import paginate
@@ -518,12 +519,12 @@ def configure_updater(updater: Updater):
         allow_reentry=True,
         states={
             QUESTION: [
-                MessageHandler(Filters.text, add_question)],
+                MessageHandler(FiltersExt.non_command_text, add_question)],
             FIRST_ANSWER: [
-                MessageHandler(Filters.text, add_answer)],
+                MessageHandler(FiltersExt.non_command_text, add_answer)],
             ANSWERS: [
                 CommandHandler("done", create_poll),
-                MessageHandler(Filters.text, add_answer),
+                MessageHandler(FiltersExt.non_command_text, add_answer),
             ]
         },
         fallbacks=[
@@ -540,7 +541,7 @@ def configure_updater(updater: Updater):
     dp.add_handler(conv_handler)
     dp.add_handler(
         MessageHandler(
-            Filters.text,
+            FiltersExt.non_command_text,
             partial(entry_point_add_question, conv_handler)))
 
     dp.add_handler(CommandHandler("help", about))
