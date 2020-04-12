@@ -17,9 +17,10 @@ Notes:
                 upload statistics in json to poll's owner.
 """
 import json
+import re
 import sys
 import urllib.parse
-from functools import partial
+import warnings
 from io import BytesIO
 from typing import Callable, List, Optional, TypeVar
 from uuid import uuid4
@@ -227,27 +228,6 @@ def add_question(update: Update, context: CallbackContext) -> int:
                        "please send me the first answer option".format(message.text))
 
     return FIRST_ANSWER
-
-
-def entry_point_add_question(conv_handler: ConversationHandler, update: Update, context: CallbackContext):
-    """
-    Force conversation literally out of nothing, but only in private chats.
-
-    The idea is to treat any text message as a question for a new poll.
-    It works by tweaking with internals of the conversation handler, and re-queueing
-    the current update, thus forcing the conversation handler to process it again
-    from the perspective of a question text.
-    """
-    message: Message = update.message
-
-    if message.chat.type == 'private':
-        key = (message.chat.id, message.from_user.id)
-
-        conv_handler.current_conversation = key
-        conv_handler.current_handler = add_question
-        conv_handler.conversations[key] = QUESTION
-
-        context.update_queue.put(update, True, 1)
 
 
 def add_answer(update: Update, context: CallbackContext) -> int:
@@ -511,38 +491,44 @@ def configure_updater(updater: Updater):
 
     dp.add_handler(MessageHandler(Filters.regex(r"/start poll_id=(.+)"), start_with_poll))
 
-    conv_handler = PersistentConversationHandler(
-        entry_points=[
-            CommandHandler("start", start_from_command),
-            CallbackQueryHandler(start_from_callback_query, pattern=r"\.start"),
-        ],
-        allow_reentry=True,
-        states={
-            QUESTION: [
-                MessageHandler(FiltersExt.non_command_text, add_question)],
-            FIRST_ANSWER: [
-                MessageHandler(FiltersExt.non_command_text, add_answer)],
-            ANSWERS: [
-                CommandHandler("done", create_poll),
-                MessageHandler(FiltersExt.non_command_text, add_answer),
-            ]
-        },
-        fallbacks=[
-            CommandHandler("cancel", cancel)
-        ],
-        per_chat=True,
-        per_user=True,
-        # No, we don't need per_message, despite what warning says.
-        # Conversation is global for chat with user, and CallbackQueryHandler is only used to
-        # enter conversation from anywhere using "Start" inline button under an empty polls list.
-        per_message=False,
-    )
+    with warnings.catch_warnings():
+        # see per_message param below
+        warnings.filterwarnings("ignore", category=UserWarning, module=re.escape(ConversationHandler.__module__))
 
-    dp.add_handler(conv_handler)
-    dp.add_handler(
-        MessageHandler(
-            FiltersExt.non_command_text,
-            partial(entry_point_add_question, conv_handler)))
+        dp.add_handler(PersistentConversationHandler(
+            entry_points=[
+                CommandHandler("start", start_from_command),
+                CallbackQueryHandler(start_from_callback_query, pattern=r"\.start"),
+                # we sacrifice the ability to use /start as a reentry point, but we
+                # gain from avoiding certain dirty hack with internals of
+                # conversation handler's implementation details.
+                MessageHandler(FiltersExt.non_command_text, add_question),
+            ],
+            allow_reentry=False,
+            states={
+                QUESTION: [
+                    MessageHandler(FiltersExt.non_command_text, add_question)],
+                FIRST_ANSWER: [
+                    MessageHandler(FiltersExt.non_command_text, add_answer)],
+                ANSWERS: [
+                    MessageHandler(FiltersExt.non_command_text, add_answer),
+                    CommandHandler("done", create_poll),
+                ]
+            },
+            fallbacks=[
+                # entry points can still be used as reentry-points, but in a form of fallbacks
+                CommandHandler("start", start_from_command),
+                CallbackQueryHandler(start_from_callback_query, pattern=r"\.start"),
+                # just a normal "`break` from the loop"
+                CommandHandler("cancel", cancel),
+            ],
+            per_chat=True,
+            per_user=True,
+            # No, we don't need per_message, despite what warning says.
+            # Conversation is global for chat with user, and CallbackQueryHandler is only used to
+            # enter conversation from anywhere using "Start" inline button under an empty polls list.
+            per_message=False,
+        ))
 
     dp.add_handler(CommandHandler("help", about))
     dp.add_handler(CommandHandler("cancel", cancel_nothing))
